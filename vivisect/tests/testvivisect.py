@@ -97,6 +97,11 @@ class VivisectTest(unittest.TestCase):
         self._exe_generics(vw)
 
     @vivbins.require
+    def test_viv_testKB_amd64(self):
+        vw = self.getAndTestWorkspace('KernelBase.dll')
+        self._exe_generics(vw)
+
+    @vivbins.require
     def test_viv_vector_getImportCallers(self):
         vw = self.getTestWorkspace('testexe_i386.exe')
         cargs = [64, 65, 66, 67, 68, 69, 70]
