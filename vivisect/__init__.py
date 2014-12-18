@@ -138,6 +138,7 @@ class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
         self.addVaSet('NoReturnCalls', (('va',VASET_ADDRESS),))
         self.addVaSet("Emulation Anomalies", (("va",VASET_ADDRESS),("Message",VASET_STRING)))
         self.addVaSet("Bookmarks", (("va",VASET_ADDRESS),("Bookmark Name", VASET_STRING)))
+        self.addVaSet('DynamicBranches', (('va',VASET_ADDRESS),('opcode', VASET_STRING),('bflags',VASET_INTEGER)))
 
     def verbprint(self, msg):
         if self.verbose:
@@ -729,6 +730,11 @@ class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
         return ret
 
     def isProbablyString(self, va):
+        plen = 0 # pascal string length
+        dlen = 0 # delphi string length
+        if self.isReadable(va-4):
+            plen = self.readMemValue(va-2, 2) # pascal string length
+            dlen = self.readMemValue(va-4, 4) # delphi string length
         offset, bytes = self.getByteDef(va)
         maxlen = len(bytes) - offset
         count = 0
@@ -739,6 +745,8 @@ class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
             c = bytes[offset+count]
             # The "strings" algo basically says 4 or more...
             if ord(c) == 0 and count >= 4:
+                return True
+            elif ord(c) == 0 and (count == dlen or count == plen):
                 return True
             if c not in string.printable:
                 return False
