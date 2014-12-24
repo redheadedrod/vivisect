@@ -3,7 +3,7 @@
 The analysis package.  Modules in this directory are responsible
 for different phases of analysis on different platforms.
 """
-
+import vivisect
 
 def addAnalysisModules(vw):
 
