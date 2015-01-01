@@ -7,6 +7,7 @@ import vivisect
 
 def addAnalysisModules(vw):
 
+    import vivisect
     import vivisect.analysis.i386 as viv_analysis_i386
 
     arch = vw.getMeta('Architecture')
