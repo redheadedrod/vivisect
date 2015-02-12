@@ -480,6 +480,7 @@ class VQVivFuncgraphView(vq_hotkey.HotKeyMixin, e_qt_memory.EnviNavMixin, QtGui.
         fva = self.vw.getFunction(addr)
         if fva == self.fva:
             self.mem_canvas.page().mainFrame().scrollToAnchor('viv:0x%.8x' % addr)
+            self.updateWindowTitle()
             return
 
         if fva == None:
