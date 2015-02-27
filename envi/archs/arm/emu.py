@@ -5,8 +5,9 @@ The initial arm module.
 import struct
 
 import envi
-from envi.archs.arm import ArmModule
+from envi.const import *
 from envi.archs.arm.regs import *
+from envi.archs.arm import ArmModule
 
 # CPU state (memory, regs inc SPSRs and banked registers)
 # CPU mode  (User, FIQ, IRQ, supervisor, Abort, Undefined, System)
@@ -17,22 +18,13 @@ from envi.archs.arm.regs import *
 
 # calling conventions
 class ArmArchitectureProcedureCall(envi.CallingConvention):
-    """
-    Implement calling conventions for your arch.
-    """
-    def execCallReturn(self, emu, value, ccinfo=None):
-        esp = emu.getRegister(REG_ESP)
-        eip = struct.unpack("<L", emu.readMemory(esp, 4))[0]
-        esp += 4 # For the saved eip
-        esp += (4 * argc) # Cleanup saved args
-
-        emu.setRegister(REG_ESP, esp)
-        emu.setRegister(REG_EAX, value)
-        emu.setProgramCounter(eip)
-
-
-    def getCallArgs(self, emu, count):
-        return emu.getRegisters(0xf)  # r0-r3 are used to hand in parameters.  additional parms are stored and pointed to by r0
+    arg_def = [(CC_REG, REG_R0), (CC_REG, REG_R1), (CC_REG, REG_R2),
+                (CC_REG, REG_R3), (CC_STACK_INF, 4),]
+    retaddr_def = (CC_REG, REG_R14)
+    retval_def = (CC_REG, REG_R0)
+    flags = CC_CALLEE_CLEANUP
+    align = 8
+    pad = 0
 
 aapcs = ArmArchitectureProcedureCall()
 
@@ -62,7 +54,8 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
     def __init__(self):
         ArmModule.__init__(self)
 
-        self.coprocs = [CoProcEmulator() for x in xrange(16)]       # FIXME: this should be None's, and added in for each real coproc... but this will work for now.
+        # FIXME: this should be None's, and added in for each real coproc... but this will work for now.
+        self.coprocs = [CoProcEmulator() for x in xrange(16)]       
 
         seglist = [ (0,0xffffffff) for x in xrange(6) ]
         envi.Emulator.__init__(self, ArmModule())
