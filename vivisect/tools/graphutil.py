@@ -597,6 +597,16 @@ def clearGraphRouting(graph, marks=['up','down']):
         for mark in marks:
             graph.delNodeProp(node, mark)
 
+def reduceGraph(graph, props=['up','down']):
+    '''
+    trims all nodes that don't have all the props in the props list
+    '''
+    for node in graph.getNodes():
+        for prop in props:
+            if node[1].get(prop) == None:
+                graph.delNode(node)
+                break
+
 def preRouteGraphUp(graph, tova, loop=True, mark='down'):
     '''
     paint a route from our destination, 'up' the graph
