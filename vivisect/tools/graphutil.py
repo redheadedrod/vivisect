@@ -596,9 +596,9 @@ def clearGraphRouting(graph, marks=['up','down']):
     '''
     clear all nodes of routing entries
     '''
-    for nid, ninfo in graph.getNodes():
-        graph.setNodeProps(nid, 'up',   False)
-        graph.setNodeProps(nid, 'down', False)
+    for node in graph.getNodes():
+        for mark in marks:
+            graph.delNodeProp(node, mark)
 
 def reduceGraph(graph, props=('up','down')):
     '''
