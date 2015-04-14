@@ -381,6 +381,7 @@ def determineCaseIndex(vw, jmpva, regname, special_vals, effs, debug):
 
     # cycle through possible case regs, check for valid location by providing index 0
     #### ARG! NASTIEST THING EVAR.  i feel dirty
+    rname = None
     for rname in unks:
         if rname not in rnames:
             continue
