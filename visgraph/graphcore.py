@@ -362,7 +362,7 @@ class Graph:
         '''
         return len(self.getRefsFrom(node)) == 0
 
-    def isRootNode(self):
+    def isRootNode(self, node):
         '''
         A node is a "root" node if he has no "incoming" edges.
         '''
