@@ -5,21 +5,18 @@ which use pointer arithetic to determine code path for each case.
 
 This will not connect switch cases which are actually explicit cmp/jz in the code.
 '''
-import envi
-import envi.archs.i386 as e_i386
-
-import vivisect
-import vivisect.tools.graphutil as viv_graph
-import vivisect.symboliks.analysis as vs_anal
-import vivisect.analysis.generic.codeblocks as vagc
 
 import envi
 import envi.archs.i386 as e_i386
+
 import vivisect
 import vivisect.cli as viv_cli
-
+import vivisect.tools.graphutil as viv_graph
 import vivisect.symboliks.emulator as vs_emu
+import vivisect.symboliks.analysis as vs_anal
 import vivisect.symboliks.substitution as vs_sub
+import vivisect.analysis.generic.codeblocks as vagc
+
 from vivisect.symboliks.common import *
 
 
@@ -38,21 +35,14 @@ the second phase actually wires up the switch case instance, providing new codef
 necessary, new codeblocks, and xrefs from the dynamic branch to the case handling code.  at the
 end, names are applied as appropriate.
 '''
-
-# TODO: break up makeSwitch into smaller components
-# TODO: try codeblock-granularity and see if that's good enough, rather than backing up by instruction
-# TODO: fix broken xref event munging (try to just solve the symbolik state as it would be.
-# TODO: once thunk_bx is merged into mainline, drag into here and test
+# TODO: Clean up isinstance() calls to use symtype
 # TODO: check offsets/pointers used to calculate jmp targets and either makeNumber or makePointer
 # TODO: complete documentation
+# TODO: try codeblock-granularity and see if that's good enough, rather than backing up by instruction
 # TODO: figure out why KernelBase has switches which are not being discovered
-MAX_ICOUNT  = 10
+MAX_INSTR_COUNT  = 10
 MAX_CASES   = 3600
 
-regidx_sets = {
-    'amd64': range(16),
-    'i386':  range(8),
-}
     
 class TrackingSymbolikEmulator(vs_emu.SymbolikEmulator):
     '''
@@ -73,7 +63,6 @@ class TrackingSymbolikEmulator(vs_emu.SymbolikEmulator):
     def getTrackInfo(self):
         return self._trackReads
         
-    
     def readSymMemory(self, symaddr, symsize, vals=None):
         '''
         The readSymMemory API is designed to read from the given
@@ -123,13 +112,20 @@ class TrackingSymbolikEmulator(vs_emu.SymbolikEmulator):
 
             
 def _cb_grab_vars(path, symobj, ctx):
+    '''
+    walkTree callback for grabbing Var objects
+    '''
     if isinstance(symobj, Var):
         if symobj.name not in ctx:
             ctx.append(symobj.name)
 
 def _cb_grab_unks(path, symobj, ctx):
+    '''
+    walkTree callback for grabbing unknown primitives: Var, Arg, Mem
+    '''
     if symobj.isDiscrete():
         pass
+
     elif isinstance(symobj, Var):
         if symobj not in ctx:
             ctx.append(symobj)
@@ -145,6 +141,9 @@ def _cb_grab_unks(path, symobj, ctx):
     return symobj
     
 def _cb_grab_muls(path, symobj, ctx):
+    '''
+    walkTree callback to grab Mul objects
+    '''
     if isinstance(symobj, o_mul):
         if (path,symobj) not in ctx:
             ctx.append((path, symobj))
@@ -152,6 +151,9 @@ def _cb_grab_muls(path, symobj, ctx):
     return symobj
 
 def _cb_contains(path, symobj, ctx):
+    '''
+    walkTree callback for determining presence within an AST
+    '''
     if symobj.solve() == ctx['compare']:
         ctx['contains'] = True
 
@@ -164,6 +166,9 @@ def _cb_contains(path, symobj, ctx):
     return symobj
 
 def contains(symobj, subobj):
+    '''
+    search through an AST looking for a particular type of thing.
+    '''
     ctx = { 'compare'  : subobj,
             'contains' : False,
             'path'     : []
@@ -171,9 +176,6 @@ def contains(symobj, subobj):
     symobj.walkTree(_cb_contains, ctx)
     return ctx.get('contains'), ctx
 
-
-
-    
 # Command Line Analysis and Linkage of Switch Cases - Microsoft and Posix - taking arguments "count" and "offset"
 def makeSwitch(vw, jmpva, count, offset, funcva=None):
     '''
@@ -232,9 +234,18 @@ def makeSwitch(vw, jmpva, count, offset, funcva=None):
     if len(op.opers) != 1:
         return
     oper = op.opers[0]
-    if not isinstance(oper, e_i386.i386RegOper):   # i386/amd64 # FIXME: how can we un-intel this?  FIXME: some could use some reg-offset thingy.  this will need to change.  if not now, then as we bring in other architectures.  the architecture module should identify what operands can be used for switch cases.  "jmp [basereg + ptrsize * indexreg)" would be totally legit...  this is a Microsoft-style filter right now.
+
+    validOper = False
+    # make sure we have an approved register for switch cases for the architecture
+    validOperands = vw.arch.archGetValidSwitchcaseOperand()
+    for voper in validOperands:
+        if isinstance(oper, voper):
+            validOper = True
+            break
+
+    if not validOper:
         return
-    
+
     # get jmp reg
     rctx = vw.arch.archGetRegCtx()
     reg = oper.reg
@@ -300,7 +311,7 @@ def zero_in(vw, jmpva, oplist, special_vals={}):
     ###  NOTE: we are backing up past significant enough complexity to get the jmp data, 
     ###     next we'll zero in on the "right" ish starting point
     deref_ops = []
-    while not xreflen and icount < MAX_ICOUNT:
+    while not xreflen and icount < MAX_INSTR_COUNT:
         loc = vw.getLocation(nva-1)
         if loc == None:
             # we've reached the beginning of whatever blob of code we know about
@@ -350,12 +361,18 @@ def zero_in(vw, jmpva, oplist, special_vals={}):
 
     return found, satvals, rname, jmpreg, deref_ops, debug
 
-def determineCaseIndex(vw, jmpva, regname, special_vals, effs, debug):
+def determineCaseIndex(vw, jmpva, regname, special_vals, effs, debug, verbose=False):
+    '''
+    determine what the switch case index register is, basically from the jmpva and 
+    previously discovered info
+    '''
+    print "\n%s\n%s\n%s\n%s\n%s\n"%(jmpva, regname, special_vals, effs, debug)
+
     archname = vw.getMeta("Architecture")
     satvals = None
 
     rctx = vw.arch.archGetRegCtx()
-    rnames = [rctx.getRegisterName(x) for x in regidx_sets[archname]]
+    rnames = vw.arch.archGetRegisterGroup('general')
 
     found = False
     semu = TrackingSymbolikEmulator(vw)
@@ -373,9 +390,9 @@ def determineCaseIndex(vw, jmpva, regname, special_vals, effs, debug):
     # determine unknown registers
     unks = []
     jmpreg.walkTree(_cb_grab_vars, unks)
-    if vw.verbose: print("unknown regs: %s" % unks)
+    if vw.verbose>1: print("unknown regs: %s" % unks)
     
-    # our models only account for two regs being fabricated
+    # this solving model only accounts for two regs being fabricated:  the index reg, and the module baseva (optional)
     if len(unks) > 2:
         return False, 0, 0, 0
 
@@ -396,18 +413,17 @@ def determineCaseIndex(vw, jmpva, regname, special_vals, effs, debug):
             
         if vw.verbose: print("vals: ", repr(vals))
 
-        # fix up for windows base
+        # fix up for windows base - why PE only?
         if vw.getMeta('Format') == 'pe':
             imagename = vw.getFileByVa(jmpva)
             imagebase = vw.filemeta[imagename]['imagebase']
-           
-            # FIXME: abstract this out by architecture
-            if archname == 'amd64':
-                kvars = ('rdi','rsi', 'r8', 'r9', 'r10')
-            elif archname == 'i386':
-                kvars = ('edi', 'esi')
-                
-            for kvar in kvars:
+            
+            # variables known to hold  imagebase  (this is compiler-specific as much as arch)
+            ibvars = vw.arch.archGetRegisterGroup('switch_mapbase')
+            if ibvars == None:
+                return
+
+            for kvar in ibvars:
                 if rname == kvar:
                     continue
                 vals[kvar] = imagebase
@@ -425,13 +441,15 @@ def determineCaseIndex(vw, jmpva, regname, special_vals, effs, debug):
 
     return found, rname, jmpreg, val, satvals
 
-def getRegRange(count, rname, satvals, special_vals, terminator_addr, start=0, interval=1):
+def getRegRange(count, rname, satvals, special_vals, terminator_addr, start=0, interval=1, verbose=False):
     regrange = vs_sub.srange(rname, int(count), imin=start, iinc=interval)
     for reg,val in satvals.items():
         if val == 0: continue
 
-        print vars(regrange)
-        print vars(vs_sub.sset(reg, [val]))
+        #FIXME: REMOVE
+        if verbose > 1:
+            print(repr(vars(regrange)))
+            print(repr(vars(vs_sub.sset(reg, [val]))))
         regrange *= vs_sub.sset(reg, [val])
         terminator_addr.append(val)
         
@@ -450,24 +468,29 @@ def iterCases(vw, satvals, jmpva, jmpreg, rname, count, special_vals):
     jmpreg.reduce()
     cases = {}
     memrefs = []
-    
-    # check once through to see if our index reg moves by 1, 2, 4, or 8:
-    interval = vw.psize / vw.psize
-    regrange = getRegRange(2, rname, satvals, special_vals, [], interval=interval)
+   
+    # check once through to see if our index reg moves by 1, 4, or 8
+    interval = 1
+    regrange = getRegRange(2, rname, satvals, special_vals, [], interval=interval, verbose=vw.verbose)
     testaddrs = []
     testemu = TrackingSymbolikEmulator(vw)
     for vals in regrange:
         testemu.setMeta('va', jmpva)
         memsymobj = symemu._trackReads[-1][1]
         addr = memsymobj.solve(emu=testemu, vals=vals)
-        #addr = jmpreg.solve(emu=testemu, vals=vals)
         testaddrs.append(addr)
 
     # check for periodic changes:
-    print "finished interval test: %s" % (testaddrs)
+    if vw.verbose>1: print("finished interval test: %s" % repr(testaddrs))
+
+    # SPECIAL_ONE_OFF: sometimes the index reg moves by "ptrsize" for each case
     delta = testaddrs[1] - testaddrs[0]
-    interval = vw.psize / delta
+    if delta == 1:
+        interval = vw.psize
+
+    if vw.verbose>1: print("== %s / %s means interval of %s " % (repr(vw.psize), repr(delta), repr(interval)))
     
+    # now we iterate through the index register values to identify case handlers
     regrange = getRegRange(count*interval, rname, satvals, special_vals, terminator_addr, interval=interval)
     for vals in regrange:
         symemu.setMeta('va', jmpva)
@@ -478,6 +501,9 @@ def iterCases(vw, satvals, jmpva, jmpreg, rname, count, special_vals):
         
         if vw.verbose: print(hex(jmpva), "analyzeSwitch: vals: ", vals, "\taddr: ", hex(addr), "\t tgt address: 0x%x" % (memtgt))
         
+        # determining when to stop identifying switch-cases can be tough.  we assume that we have the 
+        # correct number handed into this function in "count", but currently we'll stop analyzing
+        # if we run into trouble.
         if not vw.isValidPointer(addr):
             if vw.verbose: print("found invalid pointer.  quitting.")
             break
@@ -567,6 +593,8 @@ def determineCountOffset(vw, jmpva):
     handled here.
 
     we start out with symbolik analysis of routed paths from the start of the function to the dynamic jmp.
+
+    this function is also used to weed out a lot of non-switch case dynamic branches
     '''
     #FIXME: some switch-cases (ELF PIE, libc:sub_020bbec0) use indexes that increment by ptrsize, not by 1.  back up farther?  identify that?
     sctx = vs_anal.getSymbolikAnalysisContext(vw)
@@ -576,6 +604,7 @@ def determineCountOffset(vw, jmpva):
     xlate = sctx.getTranslator()
     graph = viv_graph.buildFunctionGraph(vw, funcva)
     jmpcb = vw.getCodeBlock(jmpva)
+
     sctx.getSymbolikGraph(funcva, graph)
 
     pathGenFactory = viv_graph.PathGenerator(graph)
@@ -585,103 +614,103 @@ def determineCountOffset(vw, jmpva):
     spaths = sctx.getSymbolikPaths(funcva, pathGen, graph=graph)
     semu, aeffs = spaths.next()
 
-    ################## REFACTOR ##################
-    # hack... give the jmp reg someplace to go so symboliks can help us
-    choppt = len(vw._event_list)
-    vw.addXref(jmpva, jmpcb[0], REF_CODE, rflags=op.iflags)
+    # FIXME: one path using this method may allow for layered opposing constraints, potentially
+    #        giving imposible results.  this shouldn't cause a problem, but it's possible.
 
-    if vw.verbose > 1: print(op)
+    operobj = xlate.getOperObj(op, 0)
+    if operobj.symtype != SYMT_VAR:
+        if vw.verbose > 1: 
+            print('\nBAILING - not a VAR memory location')
+            return None,None,None
 
-    seffs = xlate.translateOpcode(op)
-    if vw.verbose > 1: print(seffs)
+    acon = semu.getSymVariable(operobj.name)
 
-    cons = xlate.getConstraints()
-    if vw.verbose > 1: print("cons: ", repr(cons))
-    if not len(cons):
-        if vw.verbose: print("skipping dynamic branch, no constraints discovered to analyze (not switch-case)" )
-        return (0,0,0)
-
-    ajmp = semu.applyEffects([cons[0]])
-    if vw.verbose > 1: print(ajmp)
-
-    vw.delXref((jmpva, jmpcb[0], REF_CODE, op.iflags))
-    vw._event_list = vw._event_list[:choppt]                # FIXME: THIS IS JUST WRONG.  some better way?
-                                                            # should we just hack this xref directly into the vw.xrefs_by_from?
-                                                            # it's required to use symboliks on the final jmp reg
-    ################## refactor end #################
-    acon = ajmp[0].cons._v1
+    # grab all the constraints from start of function to here.
     fullcons = [eff for eff in aeffs if eff.efftype==EFFTYPE_CONSTRAIN]
     if vw.verbose > 1: print('\nFULLCONS: \n','\n\t'.join([repr(con) for con in fullcons]))
 
+    # grab all the multiplication effects in the operand ast.  muls will be 
+    # used to calculate a pointer into some offset/address array
     muls = []
     acon.walkTree(_cb_grab_muls, muls)
-    if vw.verbose > 1: print('\nMULS: \n',repr(muls))
+    if vw.verbose > 1: print('\nMULS: \n'+repr(muls))
 
     # this algorithm depends on the index variable being in the last Const comparison.  
     # these options may be best used with a heuristic (if one doesn't make us happy, 
     # fall through to a different one).
 
-    # loop through fullcons looking for comparisons of symidx against Consts.  last one should be our index?!?
+    # loop through fullcons looking for comparisons of symidx against Consts.  last one should be our index.
     idx = None
     upper = None
     lower = 0
-    delta = None
     
-    for cons in fullcons[::-1]:
-        if not hasattr(cons.cons, 'operstr'): continue
-        if vw.verbose > 2: print(repr(cons))
-        comparator = cons.cons.operstr
-        symvar = cons.cons._v1
-        symcmp = cons.cons._v2
-        if symcmp.symtype != SYMT_CONST:
+    for constraint in fullcons[::-1]:
+        cons = constraint.cons
+        # skip constraints that aren't bounding index
+        if not cons.symtype in (SYMT_CON_GT, SYMT_CON_GE, SYMT_CON_LT, SYMT_CON_LE): 
+            if vw.verbose>2: print("SKIPPING: cons = %s" % (repr(cons)))
             continue
 
+        if vw.verbose > 2: print(repr(cons))
+
+
+        if cons._v1.symtype == SYMT_CONST:
+            symcmp = cons._v1
+            symvar = cons._v2
+        elif cons._v2.symtype == SYMT_CONST:
+            symvar = cons._v1
+            symcmp = cons._v2
+        else:
+            # neither side of the constraint is a CONST.  this constraint does 
+            # not set static bounds on idx
+            continue
+
+        # once we identify idx, stick with it.
         if idx == None:
             idx = symvar
             baseoff = peel(idx)
 
-        # once we identify idx, stick with it.  we only care about that.
-        #### FIXME: how do we get the base...  probably need to peel back just the sub's, ignoring ands.
+
+        # check the sanity of this constraint's symvar against our idx.
         d = 0
         if idx != symvar:
             d = idx.solve() - symvar.solve()
             if abs(d) > 1000:
                 continue
-        
 
-        delta = baseoff + d
-        if vw.verbose: print("* ", repr(cons.cons._v2), "\t",repr(cons.cons._v1),"\t", repr(cons), "\tdelta: ",delta)
+        if vw.verbose: print("* "+ repr(cons._v2)+ "\t"+repr(cons._v1)+"\t"+ repr(cons))
 
 
         # FIXME: probably don't want to reset things once they're set.  this could be some other indicator for a nested switchcase...  need to get one of those for testing.
-        if comparator == ">":
+        if cons.symtype == SYMT_CON_GT:
             # this is setting the lower bound
             if lower != 0:
                 if vw.verbose: print("==we're resetting a lower bound:  %s -> %s" % (lower, symcmp))
-            lower = symcmp.solve() + 1# + delta
+            lower = symcmp.solve() + 1
             
-        elif comparator == ">=":
+        elif cons.symtype == SYMT_CON_GE:
             # this is setting the lower bound
             if lower != 0:
                 if vw.verbose: print("==we're resetting a lower bound:  %s -> %s" % (lower, symcmp))
-            lower = symcmp.solve()# + delta
+            lower = symcmp.solve()
             
-        elif comparator == "<":
+        elif cons.symtype == SYMT_CON_LT:
             # this is setting the upper bound
             if upper != None:
                 if vw.verbose: print("==we're resetting a upper bound:  %s -> %s" % (upper, symcmp))
-            upper = symcmp.solve() - 1# + delta
+            upper = symcmp.solve() - 1
             
-        elif comparator == "<=":
+        elif cons.symtype == SYMT_CON_LE:
             # this is setting the upper bound
             if upper != None:
                 if vw.verbose: print("==we're resetting a upper bound:  %s -> %s" % (upper, symcmp))
-            upper = symcmp.solve()# + delta
+            upper = symcmp.solve()
 
         else:
-            if vw.verbose: print("Unhandled comparator:  %s\n" % repr(comparator))
+            if vw.verbose: print("Unhandled comparator:  %s\n" % repr(cons))
 
-    if None in (idx, upper, delta):
+    # if we failed to identify the index, the upper bound, or the offset, 
+    if None in (idx, upper):
         if vw.verbose: print("NON-SWITCH analysis terminated: 0x%x" % jmpva)
         return (None, None, None)
 
@@ -716,6 +745,7 @@ def analyzeFunction(vw, fva):
     This is inserted as a function analysis module, right after codeblock analysis
 
     '''
+
     lastdynlen = 0
     dynbranches = vw.getVaSet('DynamicBranches')
     
