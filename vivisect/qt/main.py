@@ -20,6 +20,7 @@ import vivisect.qt.remote as viv_q_remote
 import vivisect.qt.ustruct as viv_q_ustruct
 import vivisect.extensions as viv_extensions
 import vivisect.qt.funcgraph as viv_q_funcgraph
+import vivisect.qt.allfuncgraph as viv_q_allfuncgraph
 import vivisect.qt.funcviews as viv_q_funcviews
 import vivisect.qt.symboliks as viv_q_symboliks
 import vivisect.remote.share as viv_share
@@ -56,6 +57,7 @@ class VQVivMainWindow(vq_app.VQMainCmdWindow, viv_base.VivEventDist):
         self.vqAddMenuField('&View.&Names', self._menuViewNames)
         self.vqAddMenuField('&View.&Memory', self._menuViewMemory)
         self.vqAddMenuField('&View.&Function Graph', self._menuViewFuncGraph)
+        self.vqAddMenuField('&View.&All Function Graph', self._menuViewAllFuncGraph)
         self.vqAddMenuField('&View.&Strings', self._menuViewStrings)
         #self.vqAddMenuField('&View.&Strings', ACT(viv_q_views.getLocView, vw, (LOC_STRING,LOC_UNI) ,'Strings'))
         self.vqAddMenuField('&View.&Structures', self._menuViewStructs)
@@ -206,6 +208,7 @@ class VQVivMainWindow(vq_app.VQMainCmdWindow, viv_base.VivEventDist):
         self.vqAddDockWidgetClass(vq_python.VQPythonView, args=(exprloc, self))
         self.vqAddDockWidgetClass(viv_q_memory.VQVivMemoryView, args=(self.vw, self))
         self.vqAddDockWidgetClass(viv_q_funcgraph.VQVivFuncgraphView, args=(self.vw, self))
+        self.vqAddDockWidgetClass(viv_q_allfuncgraph.VQVivAllFuncgraphView, args=(self.vw, self))
         self.vqAddDockWidgetClass(viv_q_symboliks.VivSymbolikFuncPane, args=(self.vw, self))
 
     def _menuToolsDebug(self):
@@ -213,6 +216,9 @@ class VQVivMainWindow(vq_app.VQMainCmdWindow, viv_base.VivEventDist):
 
     def _menuViewFuncGraph(self):
         self.vqBuildDockWidget('VQVivFuncgraphView', area=QtCore.Qt.TopDockWidgetArea)
+
+    def _menuViewAllFuncGraph(self):
+        self.vqBuildDockWidget('VQVivAllFuncgraphView', area=QtCore.Qt.TopDockWidgetArea)
 
     def _menuViewSymboliks(self):
         self.vqBuildDockWidget('VivSymbolikFuncPane', area=QtCore.Qt.TopDockWidgetArea)
