@@ -621,7 +621,7 @@ def determineCountOffset(vw, jmpva):
     if operobj.symtype != SYMT_VAR:
         if vw.verbose > 1: 
             print('\nBAILING - not a VAR memory location')
-            return None,None,None
+        return None,None,None
 
     acon = semu.getSymVariable(operobj.name)
 
@@ -754,6 +754,9 @@ def analyzeFunction(vw, fva):
     while lastdynlen != len(dynbranches):
         lastdynlen = len(dynbranches)
         for jmpva, (none, oprepr, bflags) in dynbranches.items():
+            if bflags & envi.BR_PROC:   # skip calls
+                continue
+
             funcva = vw.getFunction(jmpva)
             if funcva != fva:
                 # jmp_indir is for the entire VivWorkspace.  
