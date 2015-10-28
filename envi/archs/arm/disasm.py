@@ -1350,7 +1350,7 @@ class ArmOpcode(envi.Opcode):
         if self.prefixes != COND_AL:
             flags |= envi.BR_COND
 
-        if self.opcode in ( INS_B, INS_BX, INS_BL, INS_BLX ):
+        if self.opcode in ( INS_B, INS_BX, INS_BL, INS_BLX, INS_BCC ):
             oper = self.opers[0]
 
             # check for location being ODD
@@ -1892,7 +1892,7 @@ class ArmImmOffsetOper(ArmOperand):
         return True
 
     def involvesPC(self):
-        return self.base_reg == 15
+        return self.base_reg == REG_PC
 
     def isDeref(self):
         return True
