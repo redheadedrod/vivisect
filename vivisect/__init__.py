@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+import uuid
 import Queue
 import string
 import struct
@@ -18,6 +19,7 @@ import traceback
 import threading
 import collections
 
+from binascii import hexlify
 from StringIO import StringIO
 from collections import deque
 from ConfigParser import ConfigParser
@@ -48,6 +50,7 @@ from vivisect.const import *
 from vivisect.defconfig import *
 
 import vivisect.analysis.generic.emucode as v_emucode
+
 
 class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
 
@@ -607,6 +610,9 @@ class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
         Call this to ask any available analysis modules
         to do their thing...
         """
+        if self.getMeta('GUID') == None:
+            self.setMeta('GUID', uuid.uuid4().hex)
+
         if self.verbose: self.vprint('Beginning analysis...')
         if self.verbose: self.vprint('...analyzing exports.')
 
