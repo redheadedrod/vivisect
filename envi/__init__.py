@@ -722,6 +722,139 @@ class Emulator(e_reg.RegisterContext, e_mem.MemoryObject):
     def getCallingConventions(self):
         return self._emu_call_convs.items()
 
+    def readMemValue(self, addr, size):
+        """
+        Returns the value of the bytes at the "addr" address, given the size (currently, power of 2 only)
+        """
+        #FIXME: Handle endianness
+        bytes = self.readMemory(addr, size)
+        if bytes == None:
+            return None
+        if len(bytes) != size:
+            raise Exception("Read Gave Wrong Length At 0x%.8x (va: 0x%.8x wanted %d got %d)" % (self.getProgramCounter(),addr, size, len(bytes)))
+        if size == 1:
+            return struct.unpack("B", bytes)[0]
+        elif size == 2:
+            return struct.unpack(">H", bytes)[0]
+        elif size == 4:
+            return struct.unpack(">L", bytes)[0]
+        elif size == 8:
+            return struct.unpack(">Q", bytes)[0]
+
+    def writeMemValue(self, addr, value, size):
+        #FIXME change this (and all uses of it) to passing in format...
+        #FIXME: Remove byte check and possibly half-word check.  (possibly all but word?)
+        #FIXME: Handle endianness
+        if size == 1:
+            bytes = struct.pack("B",value & 0xff)
+        elif size == 2:
+            bytes = struct.pack(">H",value & 0xffff)
+        elif size == 4:
+            bytes = struct.pack(">L", value & 0xffffffff)
+        elif size == 8:
+            bytes = struct.pack(">Q", value & 0xffffffffffffffff)
+        self.writeMemory(addr, bytes)
+
+    def readMemSignedValue(self, addr, size):
+        #FIXME: Remove byte check and possibly half-word check.  (possibly all but word?)
+        #FIXME: Handle endianness
+        bytes = self.readMemory(addr, size)
+        if bytes == None:
+            return None
+        if size == 1:
+            return struct.unpack("b", bytes)[0]
+        elif size == 2:
+            return struct.unpack(">h", bytes)[0]
+        elif size == 4:
+            return struct.unpack(">l", bytes)[0]
+
+    def integerSubtraction(self, op, sidx=0, midx=1):
+        """
+        Do the core of integer subtraction but only *return* the
+        resulting value rather than assigning it.
+        (allows cmp and sub to use the same code)
+        """
+        # Src op gets sign extended to dst
+        ssize = op.opers[sidx].tsize
+        msize = op.opers[midx].tsize
+        subtra = self.getOperValue(op, sidx)
+        minuend = self.getOperValue(op, midx)
+
+        if subtra == None or minuend == None:
+            self.undefFlags()
+            return None
+
+        return self.intSubBase(subtra, minuend, ssize, msize)
+
+    def intSubBase(self, subtrahend, minuend, ssize, msize):
+        '''
+        Base for integer subtraction.  
+        Segmented such that order of operands can easily be overridden by 
+        subclasses.  Does not set flags (arch-specific), and doesn't set
+        the dest operand.  That's up to the instruction implementation.
+
+        So we can either do a BUNCH of crazyness with xor and shifting to
+        get the necessary flags here, *or* we can just do both a signed and
+        unsigned sub and use the results.
+
+        Math vocab refresher: Subtrahend - Minuend = Difference
+        '''
+        usubtra = e_bits.unsigned(subtrahend, ssize)
+        uminuend = e_bits.unsigned(minuend, msize)
+
+        ssubtra = e_bits.signed(subtrahend, ssize)
+        sminuend = e_bits.signed(minuend, msize)
+
+        ures = usubtra - uminuend
+        sres = ssubtra - sminuend
+
+        return (ssize, msize, sres, ures, ssubtra, usubtra)
+
+    def integerAddition(self, op):
+        """
+        Do the core of integer addition but only *return* the
+        resulting value rather than assigning it.
+
+        Architectures shouldn't have to override this as operand order 
+        doesn't matter
+        """
+        src = self.getOperValue(op, 0)
+        dst = self.getOperValue(op, 1)
+
+        #FIXME PDE and flags
+        if src == None:
+            self.undefFlags()
+            self.setOperValue(op, 1, None)
+            return
+
+        ssize = op.opers[0].tsize
+        dsize = op.opers[1].tsize
+
+        udst = e_bits.unsigned(dst, dsize)
+        sdst = e_bits.signed(dst, dsize)
+
+        usrc = e_bits.unsigned(src, dsize)
+        ssrc = e_bits.signed(src, dsize)
+
+        ures = usrc + udst
+        sres = ssrc + sdst
+
+        return (ssize, dsize, sres, ures, sdst, udst)
+
+    def logicalAnd(self, op):
+        src1 = self.getOperValue(op, 0)
+        src2 = self.getOperValue(op, 1)
+
+        # PDE
+        if src1 == None or src2 == None:
+            self.undefFlags()
+            self.setOperValue(op, 1, None)
+            return
+
+        res = src1 & src2
+
+        return res
+
 
 
 
@@ -1141,11 +1274,11 @@ def getArchModule(name=None):
         import envi.archs.thumb16 as e_thumb
         return e_thumb.Thumb16Module()
 
-    elif name in ( 'msp430' ):
+    elif name in ( 'msp430', ):
         import envi.archs.msp430 as e_msp430
         return e_msp430.Msp430Module()
 
-    elif name in ( 'h8' ):
+    elif name in ( 'h8', ):
         import envi.archs.h8 as e_h8
         return e_h8.H8Module()
 

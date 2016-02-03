@@ -10,80 +10,83 @@ from const import *
 from envi.archs.h8.regs import *
 
 '''
-mov b/w/l
-movfpe b
-movtpe b
-pop  w/l
-push w/l
---
-add/sub b/w/l   add.b, add.w, add.l
-addx/subx b
-inc/dec b/w/l
-adds/subs l
-daa/das b
-mulxs b/w
-mulxu b/w
-divxs b/w
-divxu b/w
-cmp b/w/l
-neg b/w/l
-exts w/l
-extu w/l
-and b/w/l
-or  b/w/l
-xor b/w/l
-not b/w/l
---
-shal/shar b/w/l
-shll/shlr b/w/l
-rotl/rotr b/w/l
-rotxl/rotxr b/w/l
-bset b
-bclr b
-bnot b
-btst b
-bad b
-biand b
---
-bor b
-bior b
-bxor b
-bixor b
-bld b
-bild b
-bst b
-bist b
---
-bcc bra/bt brn/bf bhi bls bhs bcs/blo bne beq bvc bvs bpl bmi bge blt bgt ble
-jmp
-bsr
-jsr
-rts
---
-trapa
-rte
-sleep
-ldc b/w
-stc b/w
-andc b
-orc b
-xorc b
-nop
---
-eepmov.b
-eepmov.w
+Architecture Notes:
+    Instruction Set
+        mov b/w/l
+        movfpe b
+        movtpe b
+        pop  w/l
+        push w/l
+        --
+        add/sub b/w/l   add.b, add.w, add.l
+        addx/subx b
+        inc/dec b/w/l
+        adds/subs l
+        daa/das b
+        mulxs b/w
+        mulxu b/w
+        divxs b/w
+        divxu b/w
+        cmp b/w/l
+        neg b/w/l
+        exts w/l
+        extu w/l
+        and b/w/l
+        or  b/w/l
+        xor b/w/l
+        not b/w/l
+        --
+        shal/shar b/w/l
+        shll/shlr b/w/l
+        rotl/rotr b/w/l
+        rotxl/rotxr b/w/l
+        bset b
+        bclr b
+        bnot b
+        btst b
+        bad b
+        biand b
+        --
+        bor b
+        bior b
+        bxor b
+        bixor b
+        bld b
+        bild b
+        bst b
+        bist b
+        --
+        bcc bra/bt brn/bf bhi bls bhs bcs/blo bne beq bvc bvs bpl bmi bge blt bgt ble
+        jmp
+        bsr
+        jsr
+        rts
+        --
+        trapa
+        rte
+        sleep
+        ldc b/w
+        stc b/w
+        andc b
+        orc b
+        xorc b
+        nop
+        --
+        eepmov.b
+        eepmov.w
 
-Eight addressing modes
-    Register direct [Rn]
-    Register indirect [@ERn]
-    Register indirect with displacement [@(d:16,ERn) or @(d:24,ERn)]
-    Register indirect with post-increment or pre-decrement [@ERn+ or @-ERn]
-    Absolute address [@aa:8, @aa:16, or @aa:24]
-    Immediate [#xx:8, #xx:16, or #xx:32]
-    Program-counter relative [@(d:8,PC) or @(d:16,PC)]
-    Memory indirect [@@aa:8]
+    Eight addressing modes
+        Register direct [Rn]
+        Register indirect [@ERn]
+        Register indirect with displacement [@(d:16,ERn) or @(d:24,ERn)]
+        Register indirect with post-increment or pre-decrement [@ERn+ or @-ERn]
+        Absolute address [@aa:8, @aa:16, or @aa:24]
+        Immediate [#xx:8, #xx:16, or #xx:32]
+        Program-counter relative [@(d:8,PC) or @(d:16,PC)]
+        Memory indirect [@@aa:8]
 
 '''
+
 def addrToName(mcanv, va):
     sym = mcanv.syms.getSymByAddr(va)
     if sym != None:
@@ -206,9 +209,6 @@ class H8RegDirOper(envi.RegisterOper, H8Operand):
     
     def involvesPC(self):
         return self.reg == REG_PC
-
-    def isDeref(self):
-        return False
 
     def getOperValue(self, op, emu=None):
         if self.reg == REG_PC:
@@ -360,14 +360,13 @@ class H8RegMultiOper(H8Operand):
             return False
         return True
 
-    def involvesPC(self):
-        return False
-
-    def isDeref(self):
-        return False
+    def getOperRegs(self, op):
+        return [(self.basereg + x) for x in range(self.count)]
 
     def getOperValue(self, op, emu=None):
-        return [self.basereg + x for x in range(self.count)]
+        if emu == None:
+            return
+        return [emu.getRegister(self.basereg + x) for x in range(self.count)]
 
     def render(self, mcanv, op, idx):
         basereg = self.basereg & RMETA_NMASK
@@ -418,12 +417,6 @@ class H8AbsAddrOper(H8Operand):
             return False
         return True
 
-    def involvesPC(self):
-        return False
-
-    def isDeref(self):
-        return False
-
     def getOperAddr(self, op, emu=None):
         return self.aa
 
@@ -466,12 +459,6 @@ class H8ImmOper(envi.ImmedOper, H8Operand):
             return False
         return True
 
-    def involvesPC(self):
-        return False
-
-    def isDeref(self):
-        return False
-
     def getOperValue(self, op, emu=None):
         return self.val
 
@@ -505,9 +492,6 @@ class H8MemIndirOper(envi.DerefOper, H8Operand):
         if self.tsize != oper.tsize:
             return False
         return True
-
-    def involvesPC(self):
-        return False
 
     def isDeref(self):
         return True
@@ -566,12 +550,6 @@ class H8PcOffsetOper(H8Operand):
     def involvesPC(self):
         return True
 
-    def isDeref(self):
-        return False
-
-    def isDiscrete(self):
-        return False
-
     def getOperValue(self, op, emu=None):
         return len(op) + self.va + self.val
 
@@ -592,7 +570,7 @@ class H8PcOffsetOper(H8Operand):
 
 from optables import main_table
 class H8Disasm:
-    fmt = ">H"
+    fmt = '>H'
 
     def __init__(self):
         self._dis_regctx = H8RegisterContext()
@@ -603,7 +581,7 @@ class H8Disasm:
         """
         Parse a sequence of bytes out into an envi.Opcode instance.
         """
-        opval, = struct.unpack_from(">H", bytez, offset)
+        opval, = struct.unpack_from('>H', bytez, offset)
 
         prim = opval >> 8
         opdata = main_table[prim]
