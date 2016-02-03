@@ -3,7 +3,6 @@ Graphcore contains all the base graph manipulation objects.
 '''
 import os
 import json
-import uuid
 import itertools
 import threading
 import collections
@@ -22,6 +21,9 @@ def ldict():
 def pdict():
     return collections.defaultdict(ldict)
 
+def guid():
+    return hexlify(os.urandom(16))
+
 class Graph:
 
     '''
@@ -36,11 +38,9 @@ class Graph:
         Edges are directional sets of a from node-id and to node-id and
         a piece of arbitrary edge information.
     '''
-    def __init__(self, merge=None):
+    def __init__(self):
         self.wipeGraph()
         self.formlock = threading.Lock()
-        if merge != None:
-            self.merge(merge)
 
     def setMeta(self, mprop, mval):
         self.metadata[mprop] = mval
@@ -248,7 +248,7 @@ class Graph:
               node and will have an ID automagically assigned.
         '''
         if nid == None:
-            nid = uuid.uuid4().hex
+            nid = guid()
 
         p = self.nodes.get(nid)
         if p != None:
@@ -295,7 +295,7 @@ class Graph:
             if node != None:
                 return node
 
-            nid = uuid.uuid4().hex
+            nid = guid()
             node = (nid,{prop:value})
 
             self.nodes[nid] = node
@@ -393,7 +393,7 @@ class Graph:
 
         eprops.update(kwargs)
         if eid == None:
-            eid = uuid.uuid4().hex
+            eid = guid()
 
         n1 = node1[0]
         n2 = node2[0]
@@ -610,8 +610,8 @@ class HierGraph(Graph):
     NOTE: rootnodes are designated by the presence of the "rootnode"
           property.
     '''
-    def __init__(self, merge=None):
-        Graph.__init__(self, merge)
+    def __init__(self):
+        Graph.__init__(self)
 
     def addHierRootNode(self,*args,**kwargs):
         '''
