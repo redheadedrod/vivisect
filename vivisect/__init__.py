@@ -8,7 +8,6 @@ import os
 import re
 import sys
 import time
-import uuid
 import Queue
 import string
 import struct
@@ -51,6 +50,8 @@ from vivisect.defconfig import *
 
 import vivisect.analysis.generic.emucode as v_emucode
 
+def guid(size=16):
+    return hexlify(os.urandom(size))
 
 class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
 
@@ -165,6 +166,23 @@ class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
                 vwgui.doStuffAndThings()
         '''
         return self._viv_gui
+
+    def getVivGuid(self):
+        '''
+        Return the GUID for this workspace.  Every newly created VivWorkspace 
+        should have a unique GUID, for identifying a particular workspace for
+        a given binary/process-space versus another created at a different 
+        time.  Filesystem-copies of the same workspace will have the same GUID
+        by design.  This easily allows for workspace-specific GUI layouts as
+        well as comparisons of Server-based workspaces to the original file-
+        based workspace used to store to the server.
+        '''
+        vivGuid = self.getMeta('GUID')
+        if vivGuid == None:
+            vivGuid = guid()
+            self.setMeta('GUID', vivGuid)
+
+        return vivGuid
 
     def loadWorkspace(self, wsname):
         mname = self.getMeta("StorageModule")
@@ -610,9 +628,6 @@ class VivWorkspace(e_mem.MemoryObject, viv_base.VivWorkspaceCore):
         Call this to ask any available analysis modules
         to do their thing...
         """
-        if self.getMeta('GUID') == None:
-            self.setMeta('GUID', uuid.uuid4().hex)
-
         if self.verbose: self.vprint('Beginning analysis...')
         if self.verbose: self.vprint('...analyzing exports.')
 
