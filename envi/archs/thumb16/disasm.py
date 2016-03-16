@@ -609,7 +609,172 @@ def dp_mod_imm_32(va, val1, val2):
     return opers, mnem, opcode, flags
 
 def coproc_simd_32(va, val1, val2):
-    pass
+    # p249 of ARMv7-A and ARMv7-R arch ref manual, parts 2 and 3 (not top section)
+    coproc = (val2>>8) & 0xf
+    op1 =    (val1>>4) & 0x3f
+    op =     (val2>>4) & 1
+
+    iflags = 0
+
+    if coproc & 0b1110 != 0b1010:   # apparently coproc 10 and 11 are not allowed...
+        if op1 == 0b000100: 
+            # mcrr/mcrr2 (a8-476)
+            mnem = ('mcrr','mcrr2')[(val1>12)&1]
+            
+            Rt2 = val1 & 0xf
+            Rt = (val2>>12) & 0xf
+            opc1 = (val2>>4) & 0xf
+            CRm = val2 & 0xf
+
+            olist = (
+                ArmCoprocOper(coproc),
+                ArmCoprocOpcodeOper(opc1),
+                ArmRegOper(Rt, va=va),
+                ArmRegOper(Rt2, va=va),
+                ArmCoprocRegOper(CRm),
+            )
+            opcode = IENC_COPROC_RREG_XFER<<16
+
+        elif op1 == 0b000101:
+            # mrrc/mrrc2 (a8-492)
+            mnem = ('mcrr','mcrr2')[(val1>12)&1]
+            
+            Rt2 = val1 & 0xf
+            Rt = (val2>>12) & 0xf
+            opc1 = (val2>>4) & 0xf
+            CRm = val2 & 0xf
+
+            olist = (
+                ArmCoprocOper(coproc),
+                ArmCoprocOpcodeOper(opc1),
+                ArmRegOper(Rt, va=va),
+                ArmRegOper(Rt2, va=va),
+                ArmCoprocRegOper(CRm),
+            )
+            opcode = IENC_COPROC_RREG_XFER<<16
+
+        elif op1 & 0b100000 == 0:
+            # stc/stc2 (a8-660)
+            # ldc/ldc2 immediate/literal (if Rn == 0b1111) (a8-390/392)
+            mnem = ('stc','ldc','stc2','ldc2')[((val1>>11)&2) | (op1 & 1)]
+            
+            pudwl = (val1>>4) & 0x1f
+            Rn = (val1) & 0xf
+            CRd = (val2>>12) & 0xf
+            offset = val2 & 0xff
+
+            if pudwl & 4:   # L
+                iflags = IF_L
+            else:
+                iflags = 0
+
+            olist = (
+                ArmCoprocOper(coproc),
+                ArmCoprocRegOper(CRd),
+                ArmImmOffsetOper(Rn, offset*4, va, pubwl=pudwl),
+            )
+            
+            opcode = (IENC_COPROC_LOAD << 16)
+
+        elif op1 & 0b110000 == 0b100000 and op == 0:
+            # cdp/cdp2 (a8-356)
+            opc1 =      (val1>>4) & 0xf
+            CRn =       val1 & 0xf
+            CRd =       (val2>>12) & 0xf
+            opc2 =      (val2>>5) & 0x7
+            CRm =       val2 & 0xf
+            mnem =      cdp_mnem[(val1>>12)&1]
+
+            olist = (
+                ArmCoprocOper(coproc),
+                ArmCoprocOpcodeOper(opc1),
+                ArmCoprocRegOper(CRd),
+                ArmCoprocRegOper(CRn),
+                ArmCoprocRegOper(CRm),
+                ArmCoprocOpcodeOper(opc2),
+            )
+            
+            opcode = (IENC_COPROC_DP << 16)
+
+        elif op1 & 0b110001 == 0b100000 and op == 1:
+            # mcr/mcr2 (a8-474)
+            # mrc/mrc2 (a8-490)
+            load =      (val1>>4) & 1
+            two =       (val1>>11) & 2
+            opc1 =      (val1>>5) & 0x7
+            CRn =       val2 & 0xf
+            Rd =        (val2>>12) & 0xf
+            opc2 =      (val2>>5) & 0x7
+            CRm =       val2 & 0xf
+            mnem =      ('mcr','mrc','mcr2','mrc2')[load | two]
+
+            olist = (
+                ArmCoprocOper(coproc),
+                ArmCoprocOpcodeOper(opc1),
+                ArmRegOper(Rd, va=va),
+                ArmCoprocRegOper(CRn),
+                ArmCoprocRegOper(CRm),
+                ArmCoprocOpcodeOper(opc2),
+            )
+            
+            opcode = (IENC_COPROC_REG_XFER << 16)
+
+    else:
+        if op1 & 0b111110 == 0b000100:
+            # adv simd fp (A7-277)
+            pass
+        elif op1 & 0b100000 == 0:
+            Rn = val1 & 0xf
+
+            # adv simd fp (a7-272)
+            tmop = op1 & 0b11011
+
+            if op1 & 0b11110 == 0b00100:
+                # 64 bit transverse between ARM core and extension registers (a7-277)
+                pass
+
+
+
+            elif op1 & 0b11001 == 0b01000:
+                # VSTM (1078) (IA, writeback/nowriteback)
+                mnem = 'vstm'
+                iflags |= IF_IA
+            elif op1 & 0b10011 == 0b10000:
+                # VSTR (1080)
+                mnem = 'vstr'
+            elif tmop1 == 0b10010:
+                if Rn == 0xd:
+                    # VPUSH (990)
+                    mnem = 'vpush'
+                else:
+                    # VSTM DB, nowriteback (1078)
+                    mnem = 'vstm'
+            elif tmop1 == 0b01001:
+                # VLDM IA, nowriteback (920)
+                mnem = 'vldm'
+            elif tmop1 == 0b01011:
+                if Rn == 0xd:
+                    # VPOP (988)
+                    mnem = 'vpop'
+                else:
+                    # VLDM IA, writeback (920)
+                    mnem = 'vldm'
+            elif op1 & 0b10011 == 0b10001:
+                # VLDR (922)
+                mnem = 'vldr'
+            elif tmop1 == 0b10011:
+                # VLDM DB, writeback (920)
+                mnem = 'vldm'
+
+        elif op1 & 0b110000 == 0b100000:
+            if op == 0:
+                # fp dp (a7-270)
+                pass
+            else:
+                # adv simd fp (a7-276)
+                pass
+        opcode = 0
+    return (opcode, mnem, olist, iflags)
 
 def adv_simd_32(va, val1, val2):
     # aside from u and the first 8 bits, ARM and Thumb2 decode identically (A7-259)
@@ -820,6 +985,10 @@ thumb1_extension = [
 
 ###  holy crap, this is so wrong and imcomplete....
 # FIXME: need to take into account ThumbEE 
+# 32-bit Thumb instructions start with:
+# 0b11101
+# 0b11110
+# 0b11111
 thumb2_extension = [
     ('11100',       (85,'ldm',      ldm16,     0)),     # 16-bit instructions
     #('11101',       (86,'blah32',   thumb32_01,   IF_THUMB32)),         # can't do thumb32 in tree-fashion
@@ -901,10 +1070,11 @@ thumb2_extension = [
     ('11101011101',         (85,'sub',      dp_shift_32,        IF_THUMB32)),  # cmp if rd=1111 and s=1
     ('11101011110',         (85,'rsb',      dp_shift_32,        IF_THUMB32)),
 
-    # coproc, adv simd, fp-instrs
+    # coproc, adv simd, fp-instrs #ed9f 5a31
     ('11101111',            (85,'adv simd', adv_simd_32,        IF_THUMB32)),   # not fully implemented :)
     ('11111111',            (85,'adv simd', adv_simd_32,        IF_THUMB32)),   # FIXME: not implemented
     ('11101110',            (85,'coproc simd', coproc_simd_32,  IF_THUMB32)),   # FIXME: not implemented
+    ('11101101',            (85,'coproc simd', coproc_simd_32,  IF_THUMB32)),   # FIXME: not implemented
     ('11111110',            (85,'coproc simd', coproc_simd_32,  IF_THUMB32)),   # FIXME: not implemented
 
     # data-processing (modified immediate)
@@ -975,6 +1145,8 @@ class Thumb16Disasm:
     _tree = ttree
     _optype = envi.ARCH_THUMB16
     _opclass = ThumbOpcode
+    def __init__(self, doModeSwitch=True):
+        self._doModeSwitch = doModeSwitch
 
     def disasm(self, bytez, offset, va, trackMode=True):
         flags = 0

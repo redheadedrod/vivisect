@@ -476,6 +476,38 @@ def p_extra_load_store(opval, va):
     return (opcode, mnem, olist, iflags)
 
 
+def p_load_store_word_ubyte(opval, va):
+    # p206
+    #STR(register) pA8-672
+    #STRT  A8-704
+    #LDR(register) pA8-412
+    #LDRT A8-464
+    #STRB(imm) A8-678
+    #STRBT A8-682
+    #LDRB(reg) A8-420
+    #LDRBT A8-422
+    pubwl = (opval>>20) & 0x1f
+    Rn = (opval>>16) & 0xf
+    Rd = (opval>>12) & 0xf
+    Rm = opval & 0xf
+    shval = (opval>>7) & 0x1f
+    shtype = (opval>>5) & 3
+
+    iflags = 0
+    if pubwl & 4:   # B   
+        iflags = IF_B
+
+    if (pubwl & 0x12) == 2:
+        iflags |= IF_T
+
+    olist = (
+        ArmRegOper(Rd, va=va),
+        ArmScaledOffsetOper(Rn, Rm, shtype, shval, va, pubwl)    # u=-/+, b=word/byte
+    )
+    
+    opcode = (IENC_LOAD_STORE_WORD_UBYTE << 16)
+    return (opcode, ldr_mnem[pubwl&1], olist, iflags)
+
 def p_dp_reg_shift(opval, va):
     ocode,sflag,Rn,Rd = dpbase(opval)
     Rm = opval & 0xf
@@ -631,17 +663,26 @@ def p_mov_imm_stat(opval, va):      # only one instruction: "msr"
 ldr_mnem = ("str", "ldr")
 tsizes = (4, 1,)
 def p_load_imm_off(opval, va):
+    # FIXME: handle STRT and others introduced in ARMv7 (p206)
+    # * STR(imm) A8-672
+    # * STRT A8-704
+    # * LDR(imm) A8-406
+    # * LDRT A8-464
+    # * STRB(imm) A8-678
+    # * STRBT A8-672
+    # * LDRB(imm/literal) A8-416-418
+    # * LDRBT A8-422
     pubwl = (opval>>20) & 0x1f
     Rn = (opval>>16) & 0xf
     Rd = (opval>>12) & 0xf
     imm = opval & 0xfff
 
+    iflags = 0
     if pubwl & 4:   # B   
         iflags = IF_B
-        if (pubwl & 0x12) == 2:
-            iflags |= IF_T
-    else:
-        iflags = 0
+
+    if (pubwl & 0x12) == 2:
+        iflags |= IF_T
 
     olist = (
         ArmRegOper(Rd, va=va),
@@ -702,7 +743,10 @@ par_suffixes = ("add16", "addsubx", "subaddx", "sub16", "add8", "sub8", "", "")
 par_prefixes = ("","s","q","sh","","u","uq","uh")
 for pre in par_prefixes:
     for suf in par_suffixes:
-        parallel_mnem.append(pre+suf)
+        if not (len(pre) and len(suf)):
+            parallel_mnem.append(None)
+        else:
+            parallel_mnem.append(pre+suf)
 
 parallel_mnem = tuple(parallel_mnem)
 
@@ -973,8 +1017,7 @@ def p_coproc_dbl_reg_xfer(opval, va):
     opcode = IENC_COPROC_RREG_XFER<<16
     return (opcode, mnem, olist, 0)
     
-cdp_mnem = ["cdp" for x in range(15)]
-cdp_mnem.append("cdp2")
+cdp_mnem = ("cdp", "cdp2")
 
 def p_coproc_dp(opval, va):
     opcode1 = (opval>>20) & 0xf
@@ -983,7 +1026,7 @@ def p_coproc_dp(opval, va):
     cp_num = (opval>>8) & 0xf
     opcode2 = (opval>>5) & 0x7
     CRm = opval & 0xf
-    mnem = cdp_mnem[opval>>28]
+    mnem = cdp_mnem[(opval>>28)&1]
 
     olist = (
         ArmCoprocOper(cp_num),
@@ -1214,7 +1257,7 @@ def p_uncond(opval, va):
     
 ####################################################################
 # Table of the parser functions
-ienc_parsers_tmp = [None for x in range(21)]
+ienc_parsers_tmp = [None for x in range(IENC_MAX)]
 
 ienc_parsers_tmp[IENC_DP_IMM_SHIFT] =  p_dp_imm_shift
 ienc_parsers_tmp[IENC_MISC] =   p_misc
@@ -1228,6 +1271,7 @@ ienc_parsers_tmp[IENC_DP_IMM] =   p_dp_imm
 ienc_parsers_tmp[IENC_LOAD_IMM_OFF] =   p_load_imm_off
 ienc_parsers_tmp[IENC_LOAD_REG_OFF] =   p_load_reg_off
 ienc_parsers_tmp[IENC_ARCH_UNDEF] =   p_arch_undef
+ienc_parsers_tmp[IENC_LOAD_STORE_WORD_UBYTE] =   p_load_store_word_ubyte
 ienc_parsers_tmp[IENC_MEDIA] =   p_media
 ienc_parsers_tmp[IENC_LOAD_MULT] =   p_load_mult
 ienc_parsers_tmp[IENC_BRANCH] =   p_branch
@@ -1278,7 +1322,8 @@ s_1_table = (
 
 s_3_table = (
     (0b00000001111100000000000011110000, 0b00000001111100000000000011110000, IENC_ARCH_UNDEF),
-    (0b00000000000000000000000000010000, 0b00000000000000000000000000010000, IENC_MEDIA),
+    (0b00001110000000000000000000010000, 0b00000110000000000000000000000000, IENC_LOAD_STORE_WORD_UBYTE),
+    (0b00001110000000000000000000010000, 0b00000110000000000000000000010000, IENC_MEDIA),
     (0,0, IENC_LOAD_REG_OFF),
 )
 
@@ -1344,6 +1389,7 @@ class ArmOpcode(envi.Opcode):
         """
         ret = []
 
+        # if we aren't a NOFALL instruction, add the fallthrough branch
         if not self.iflags & envi.IF_NOFALL:
             ret.append((self.va + self.size, envi.BR_FALL | self._def_arch))
 

@@ -45,4 +45,41 @@ class ArmModule(envi.ArchitectureModule):
     def getEmulator(self):
         return ArmEmulator()
 
+class ThumbModule(envi.ArchitectureModule):
+    '''
+    This architecture module will *not* shift to ARM mode.  Evar.
+    '''
+
+    def __init__(self, name='armv6'):
+        import envi.archs.thumb16.disasm as eatd
+        envi.ArchitectureModule.__init__(self, name, maxinst=4)
+        self._arch_reg = self.archGetRegCtx()
+        self._arch_dis = eatd.Thumb2Disasm(doModeSwitch=False)
+
+    def archGetRegCtx(self):
+        return ArmRegisterContext()
+
+    def archGetBreakInstr(self):
+        raise Exception ("weird... what are you trying to do here?  ARM has a complex breakpoint instruction")
+        return
+
+    def archGetNopInstr(self):
+        return '\x00'
+ 
+    def getPointerSize(self):
+        return 4
+
+    def pointerString(self, va):
+        return "0x%.8x" % va
+
+    def archParseOpcode(self, bytes, offset=0, va=0):
+        """
+        Parse a sequence of bytes out into an envi.Opcode instance.
+        """
+        va &= -2
+        return self._arch_dis.disasm(bytes, offset, va)
+
+    def getEmulator(self):
+        return ArmEmulator()
+
 from envi.archs.arm.emu import *

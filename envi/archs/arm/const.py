@@ -183,6 +183,9 @@ IENC_EXTRA_LOAD   = 20 # extra load/store (swp)
 IENC_DP_MOVW      = 21 # 
 IENC_DP_MOVT      = 22 # 
 IENC_DP_MSR_IMM   = 23 # 
+IENC_LOAD_STORE_WORD_UBYTE = 24
+
+IENC_MAX        = 25
 
 # offchutes
 IENC_MEDIA_PARALLEL = ((IENC_MEDIA << 8) + 1) << 8
