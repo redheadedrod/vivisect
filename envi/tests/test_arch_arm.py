@@ -17,6 +17,7 @@ from envi.archs.h8.parsers import *
 
 # OPHEX, VA, repr, flags, emutests
 instrs = [
+        # FIXME: create list of this from IDA flow below
         ( '8342', 0x4560, 'add.b #42, r3h', IF_B, () ),
         ( '7c6075f0', 0x4560, 'bixor #7, @er6', 0, () ),
         ( '7d507170', 0x4560, 'bnot #7, @er5', 0, () ),
@@ -118,6 +119,9 @@ class ArmInstructionSet(unittest.TestCase):
         #emu.executeOpcode(op)
         ##print( hex(emu.getRegisterByName('r3h')), emu.getFlag(CCR_C) )
         ##0xef False
+
+    def test_envi_arm_thumb_switches(self):
+        pass
 
     def validateEmulation(self, emu, op, setters, tests):
         # first set any environment stuff necessary
@@ -223,10 +227,11 @@ raw_instrs = [
     ]
 
 
-out = []
-for z in range(16):
-    for x in range(32):
-        y = 0xe0034567 + (x<<20) + (z<<4)
+def genDPArm():
+    out = []
+    for z in range(16):
+        for x in range(32):
+            y = 0xe0034567 + (x<<20) + (z<<4)
             try:
                 bytez = struct.pack("<I", y)
                 out.append(bytez)
@@ -236,8 +241,9 @@ for z in range(16):
             except:
                 print "%x error" % y
 
-file('dpArmTest','w').write(''.join(out))
+    file('dpArmTest','w').write(''.join(out))
 
+'''
 674503E0                    AND             R4, R3, R7,ROR#10
 674513E0                    ANDS            R4, R3, R7,ROR#10
 674523E0                    EOR             R4, R3, R7,ROR#10
@@ -777,21 +783,50 @@ F745F3E1                    LDRSH           R4, [R3,#0x57]!
 6745D3E0                    SBCS            R4, R3, R7,ROR#10
 6745E3E0                    RSC             R4, R3, R7,ROR#10
 6745F3E0                    RSCS            R4, R3, R7,ROR#10
-
-# Media Instructions
-out = []
-for x in range(32):
-    for z in range(8):
-        y = 0xe6034f17 + (x<<20) + (z<<5)
-        try:
-            bytez = struct.pack("<I", y)
-            out.append(bytez)
-            op = vw.arch.archParseOpcode(bytez)
-            print "%x %s" % (y, op)
-
-        except:
-            print "%x error" % y
-
-file('mediaArmTest','w').write(''.join(out))
+'''
 
 
+def genMediaInstructionBytes():
+    # Media Instructions
+    out = []
+    for x in range(32):
+        for z in range(8):
+            y = 0xe6034f17 + (x<<20) + (z<<5)
+            try:
+                bytez = struct.pack("<I", y)
+                out.append(bytez)
+                op = vw.arch.archParseOpcode(bytez)
+                print "%x %s" % (y, op)
+
+            except:
+                print "%x error" % y
+
+    file('mediaArmTest','w').write(''.join(out))
+
+def genAdvSIMD():
+    # thumb
+    outthumb = []
+    outarm = []
+    base = 0xe0043002 # generic Adv SIMD with Vn=8, Vd=6, Vm=4 (or 4,3,2, depending)
+    # thumb dp, arm dp (with both 0/1 for U)
+    for option in (0xf000000, 0x2000000, 0x3000000, 0x1f000000):
+        for A in range(16): # three registers of same length
+            for B in range(16): # three registers of same length
+                for C in range(16):
+                    val = base + (A<<19) + (B<<8) + (C<<4)
+                    bytez = struct.pack("<I", val)
+                    outarm.append(bytez)
+                    bytez = struct.pack("<HH", val>>16, val&0xffff)
+                    outthumb.append(bytez)
+
+                    #op = vw.arch.archParseOpcode(bytez)
+                    #print "%x %s" % (val, op)
+
+    out = outarm
+    out.extend(outthumb)
+    file('advSIMD', 'wb').write(''.join(out))
+
+
+
+
+# thumb 16bit IT, CNBZ, CBZ

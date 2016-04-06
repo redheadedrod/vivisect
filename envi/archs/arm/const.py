@@ -27,6 +27,20 @@ IF_VR        = 1<<52    # Adv SIMD: operation performs rounding
 IF_VD        = 1<<53    # Adv SIMD: operation doubles the result
 IF_VH        = 1<<54    # Adv SIMD: operation halves the result
 IF_SYS_MODE  = 1<<58    # instruction is encoded to be executed in SYSTEM mode, not USER mode
+IF_F32       = 1<<59    # F64 SIMD
+IF_F64       = 1<<60    # F64 SIMD
+IF_F32S32    = 1<<61    # F64 SIMD
+IF_F64S32    = 1<<62    # F64 SIMD
+IF_F32U32    = 1<<63    # F64 SIMD
+IF_F64U32    = 1<<64    # F64 SIMD
+IF_F3264     = 1<<65    # F64 SIMD
+IF_F6432     = 1<<66    # F64 SIMD
+IF_F3216     = 1<<67    # F64 SIMD
+IF_F1632     = 1<<68    # F64 SIMD
+IF_S32F64    = 1<<69    # F64 SIMD
+IF_S32F32    = 1<<70    # F64 SIMD
+IF_U32F64    = 1<<71    # F64 SIMD
+IF_U32F32    = 1<<72    # F64 SIMD
 
 OF_W         = 1<<8     # Write back to 
 OF_UM        = 1<<9     # Usermode, or if r15 included set current SPSR -> CPSR
@@ -131,10 +145,15 @@ REG_SPSR_und = REG_OFFSET_UND + 17
 REG_SPSR_sys = REG_OFFSET_SYS + 17
 
 REG_PC = 0xf
+REG_LR = 0xe
 REG_SP = 0xd
 REG_BP = None
 REG_CPSR = REG_OFFSET_CPSR
 REG_FLAGS = REG_OFFSET_CPSR    #same location, backward-compat name
+REG_EXT_S_FLAG = 0x200000
+REG_EXT_D_FLAG = 0x400000
+
+VFP_QWORD_REG_COUNT = 16    # VFPv4-D32
 
 proc_modes = { # mode_name, short_name, description, offset, mode_reg_count, PSR_offset, privilege_level
     PM_usr: ("User Processor Mode", "usr", "Normal program execution mode", REG_OFFSET_USR, 15, REG_SPSR_usr, 0),
