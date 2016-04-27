@@ -34,23 +34,23 @@ class ArmArchitectureProcedureCall(envi.CallingConvention):
 aapcs = ArmArchitectureProcedureCall()
 
 class CoProcEmulator:       # useful for prototyping, but should be subclassed
-    def __init__(self):
-        pass
+    def __init__(self, ident):
+        self.ident = ident
 
     def stc(self, parms):
-        logger.info("CoProcEmu: stc(%r)", parms)
+        logger.info("CoProcEmu(%s): stc(%r)", self.ident, parms)
     def ldc(self, parms):
-        logger.info("CoProcEmu: ldc(%r)", parms)
+        logger.info("CoProcEmu(%s): ldc(%r)", self.ident, parms)
     def cdp(self, parms):
-        logger.info("CoProcEmu: cdp(%r)", parms)
+        logger.info("CoProcEmu(%s): cdp(%r)", self.ident, parms)
     def mcr(self, parms):
-        logger.info("CoProcEmu: mcr(%r)", parms)
+        logger.info("CoProcEmu(%s): mcr(%r)", self.ident, parms)
     def mcrr(self, parms):
-        logger.info("CoProcEmu: mcrr(%r)", parms)
+        logger.info("CoProcEmu(%s): mcrr(%r)", self.ident, parms)
     def mrc(self, parms):
-        logger.info("CoProcEmu: mrc(%r)", parms)
+        logger.info("CoProcEmu(%s): mrc(%r)", self.ident, parms)
     def mrrc(self, parms):
-        logger.info("CoProcEmu: mrrc(%r)", parms)
+        logger.info("CoProcEmu(%s): mrrc(%r)", self.ident, parms)
 
 
 def _getRegIdx(idx, mode):
@@ -88,7 +88,7 @@ def c1000(flags):
     return (flags & 6) == 2
 
 def c1001(flags):
-    return (flags & c) in (0, 4, 6) # C clear or Z set
+    return (flags & 0xc) in (0, 4, 6) # C clear or Z set
 
 def c1010(flags):
     return (flags & 9) in (0, 9)    # N == V
@@ -126,14 +126,15 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
         ArmModule.__init__(self)
 
         # FIXME: this should be None's, and added in for each real coproc... but this will work for now.
-        self.coprocs = [CoProcEmulator() for x in xrange(16)]       
+        self.coprocs = [CoProcEmulator(x) for x in xrange(16)]       
+        self.int_handlers = [self.default_int_handler for x in range(100)]
 
         seglist = [ (0,0xffffffff) for x in xrange(6) ]
         envi.Emulator.__init__(self, ArmModule())
 
         ArmRegisterContext.__init__(self)
 
-        self.addCallingConvention("Arm Arch Procedure Call", aapcs)
+        self.addCallingConvention("armcall", aapcs)
 
     def undefFlags(self):
         """
@@ -212,10 +213,12 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
                 raise envi.UnsupportedInstruction(self, op)
             x = meth(op)
 
+        
         if x == None:
             pc = self.getProgramCounter()
             x = pc+op.size
 
+        # should we set this to the odd address or even during thumb?  (debugger)
         self.setProgramCounter(x)
 
     def doPush(self, val):
@@ -354,6 +357,35 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
 
         return self.intSubBase(src1, src2, Sflag)
 
+    def AddWithCarry(self, src1, src2, carry=0, Sflag=0, rd=0):
+        udst = e_bits.unsigned(src1, 4)
+        usrc = e_bits.unsigned(src2, 4)
+
+        sdst = e_bits.signed(src1, 4)
+        ssrc = e_bits.signed(src2, 4)
+
+        ures = (udst + usrc + carry) & 0xffffffff
+        sres = (sdst + ssrc + carry)
+        result = ures & 0x7fffffff
+
+        #newcarry = (ures != result)
+        newcarry = (udst >= usrc)
+        overflow = (sres != result)
+
+        if Sflag:
+            curmode = self.getProcMode() 
+            if rd == 15:
+                if(curmode != PM_sys and curmode != PM_usr):
+                    self.setCPSR(self.getSPSR(curmode))
+                else:
+                    raise Exception("Messed up opcode...  adding to r15 from PM_usr or PM_sys")
+            self.setFlag(PSR_N_bit, e_bits.is_signed(ures, 4))
+            self.setFlag(PSR_Z_bit, not ures)
+            self.setFlag(PSR_C_bit, newcarry)
+            self.setFlag(PSR_V_bit, overflow)
+
+        return ures
+
     def intSubBase(self, src1, src2, Sflag=0, rd=0):
         # So we can either do a BUNCH of crazyness with xor and shifting to
         # get the necessary flags here, *or* we can just do both a signed and
@@ -378,7 +410,7 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
                     raise Exception("Messed up opcode...  adding to r15 from PM_usr or PM_sys")
             self.setFlag(PSR_N_bit, e_bits.is_signed(ures, 4))
             self.setFlag(PSR_Z_bit, not ures)
-            self.setFlag(PSR_C_bit, not e_bits.is_unsigned_carry(ures, 4))
+            self.setFlag(PSR_C_bit, e_bits.is_unsigned_carry(ures, 4))
             self.setFlag(PSR_V_bit, e_bits.is_signed_overflow(sres, 4))
 
         return ures
@@ -401,9 +433,37 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
         self.setFlag(PSR_V_bit, 0)
         return res
 
+    def interrupt(self, val):
+        if val >= len(self.int_handlers):
+            print("FIXME: Interrupt Handler %x is not handled") % val
+
+        handler = self.int_handlers[val]
+        handler(val)
+
+    def default_int_handler(self, val):
+        print("DEFAULT INTERRUPT HANDLER for Interrupt %d (called at 0x%x)" % (val, self.getProgramCounter()))
+        print("Stack Dump:")
+        sp = self.getStackCounter()
+        for x in range(16):
+            print("\t0x%x:\t0x%x" % (sp, self.readMemValue(sp, self.psize)))
+            sp += 4
+
     def i_and(self, op):
         res = self.logicalAnd(op)
         self.setOperValue(op, 0, res)
+        
+    def i_orr(self, op):
+        val1 = self.getOperValue(op, 1)
+        val2 = self.getOperValue(op, 2)
+        val = val1 | val2
+        self.setOperValue(op, 0, val)
+
+        Sflag = op.iflags & IF_S # FIXME: IF_PSR_S???
+        if Sflag:
+            self.setFlag(PSR_N_bit, e_bits.is_signed(val, 4))
+            self.setFlag(PSR_Z_bit, not val)
+            self.setFlag(PSR_C_bit, e_bits.is_unsigned_carry(val, 4))
+            self.setFlag(PSR_V_bit, e_bits.is_signed_overflow(val, 4))
         
     def i_stm(self, op):
         srcreg = op.opers[0].reg
@@ -493,6 +553,11 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
     i_msr = i_mov
     i_adr = i_mov
 
+    def i_mvn(self, op):
+        val = self.getOperValue(op, 1)
+        val ^= 0xffffffff
+        self.setOperValue(op, 0, val)
+
     def i_str(self, op):
         # hint: covers str, strb, strbt, strd, strh, strsh, strsb, strt   (any instr where the syntax is str{condition}stuff)
         val = self.getOperValue(op, 0)
@@ -543,6 +608,17 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
     def i_bl(self, op):
         self.setRegister(REG_LR, self.getRegister(REG_PC))
         return self.getOperValue(op, 0)
+
+    def i_bx(self, op):
+        target = self.getOperValue(op, 0)
+        self.setFlag(PSR_T_bit, target & 1)
+        return target
+
+    def i_blx(self, op):
+        self.setRegister(REG_LR, self.getRegister(REG_PC))
+        target = self.getOperValue(op, 0)
+        self.setFlag(PSR_T_bit, target & 1)
+        return target
 
     def i_tst(self, op):
         src1 = self.getOperValue(op, 0)
@@ -658,44 +734,121 @@ class ArmEmulator(ArmModule, ArmRegisterContext, envi.Emulator):
         src2 = self.getOperValue(op, 1)
         Sflag = op.iflags & IF_PSR_S
 
+        origeflags = self.getRegister(REG_CPSR)
+
+        res2 = self.AddWithCarry(src1, 0xffffffff^src2, 1, Sflag, op.opers[0].reg)
+        eflags2 = self.getRegister(REG_CPSR)
+
+        self.setRegister(REG_CPSR, origeflags)
         res = self.intSubBase(src1, src2, Sflag, op.opers[0].reg)
+        eflags1 = self.getRegister(REG_CPSR)
+
+        #if res != res2 or eflags1 != eflags2:
+        #    print "==== uhoh: intSubBase and AddWithCarry methods differ!: 0x%x:  %s    %x ? %x  (%x / %x ? %x) "  %\
+        #            (op.va, op, res, res2, origeflags, eflags1, eflags2)
+
+    def i_cmn(self, op):
+        # Src op gets sign extended to dst
+        src1 = self.getOperValue(op, 0)
+        src2 = self.getOperValue(op, 1)
+        Sflag = op.iflags & IF_PSR_S
+
+        origeflags = self.getRegister(REG_CPSR)
+
+        res2 = self.AddWithCarry(src1, src2, 0, Sflag, op.opers[0].reg)
+        eflags2 = self.getRegister(REG_CPSR)
+
+        self.setRegister(REG_CPSR, origeflags)
+        res = self.intSubBase(src1, src2, Sflag, op.opers[0].reg)
+        eflags1 = self.getRegister(REG_CPSR)
+
+        #if res != res2 or eflags1 != eflags2:
+        #    print "==== uhoh: intSubBase and AddWithCarry methods differ!: 0x%x:  %s    %x ? %x  (%x / %x ? %x) "  %\
+        #            (op.va, op, res, res2, origeflags, eflags1, eflags2)
 
     i_cmps = i_cmp
+
+    def i_bic(self, op):
+        val = self.getOperValue(op, 1)
+        const = self.getOperValue(op, 2)
+        val &= ~const
+        self.setOperValue(op, 0, val)
+
+        Sflag = op.iflags & IF_S # FIXME: IF_PSR_S???
+        if Sflag:
+            self.setFlag(PSR_N_bit, e_bits.is_signed(val, 4))
+            self.setFlag(PSR_Z_bit, not val)
+            self.setFlag(PSR_C_bit, e_bits.is_unsigned_carry(val, 4))
+            self.setFlag(PSR_V_bit, e_bits.is_signed_overflow(val, 4))
+
+    def i_swi(self, op):
+        # this causes a software interrupt.  we need a good way to handle interrupts
+        self.interrupt(op.opers[0].val)
+
+    def i_mul(self, op):
+        Rn = self.getOperValue(op, 1)
+        if len(op.opers) == 3:
+            Rm = self.getOperValue(op, 2)
+        else:
+            Rm = self.getOperValue(op, 0)
+        val = Rn * Rm
+        self.setOperValue(op, 0, val)
+
+        Sflag = op.iflags & IF_S
+        if Sflag:
+            self.setFlag(PSR_N_bit, e_bits.is_signed(val, 4))
+            self.setFlag(PSR_Z_bit, not val)
+            self.setFlag(PSR_C_bit, e_bits.is_unsigned_carry(val, 4))
+            self.setFlag(PSR_V_bit, e_bits.is_signed_overflow(val, 4))
+
+
+    def i_umull(self, op):
+        print("FIXME: 0x%x: %s" % (op.va, op))
+
+    def i_pld2(self, op):
+        print("FIXME: 0x%x: %s" % (op.va, op))
+
+    def _getCoProc(self, cpnum):
+        if cpnum > 15:
+            raise Exception("Emu error: Attempting to access coproc %d (max: 15)" % cpnum)
+
+        coproc = self.coprocs[cpnum]
+        return coproc
 
 
     # Coprocessor Instructions
     def i_stc(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.stc(op.opers)
 
     def i_ldc(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.ldc(op.opers)
 
     def i_cdp(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.cdp(op.opers)
 
     def i_mrc(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.mrc(op.opers)
 
     def i_mrrc(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.mrrc(op.opers)
 
     def i_mcr(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.mrrc(op.opers)
 
     def i_mcrr(self, op):
-        cpnum = op.opers[0]
+        cpnum = op.opers[0].val
         coproc = self._getCoProc(cpnum)
         coproc.mcrr(op.opers)
 
