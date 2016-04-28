@@ -413,6 +413,21 @@ def ThumbExpandImm_C(imm4, imm8, carry):
         off = (a | (imm4<<1) )
         return ROR_C(imm8, 32, off)
 
+dp_secondary = (
+            'tst',# and
+            None, # bic
+            None, # orr
+            'mvn', # orn
+            'teq', # eor
+            None, #
+            None, #
+            None, # pkh
+            'cmn', #add
+            None, # adc
+            None, # sbc
+            'cmp', #sub
+            None
+            )
 def dp_mod_imm_32(va, val1, val2):
     if val2 & 0x8000:
         return bl_imm23(va, val1,val2)
@@ -420,9 +435,6 @@ def dp_mod_imm_32(va, val1, val2):
     flags = 0
     Rd = (val2 >> 8) & 0xf
     S = (val1>>4) & 1
-
-    if Rd==15 and S:
-        raise Exception("dp_mod_imm_32 - FIXME: secondary dp encoding")
 
     Rn = val1 & 0xf
 
@@ -436,6 +448,17 @@ def dp_mod_imm_32(va, val1, val2):
 
     const,carry = ThumbExpandImm_C(imm4, const, 0)
     
+    if Rd==15 and S:
+        #raise Exception("dp_mod_imm_32 - FIXME: secondary dp encoding")
+        dpop = (val1>>5) & 0xf
+        if dp_secondary[dpop] == None:
+            raise Exception("dp_mod_imm_32: Rd==15, S, but dpop doesn't have a secondary! va:%x, %x%x" % (va, val1, val2))
+
+        oper1 = ArmRegOper(Rn)
+        oper2 = ArmImmOper(const)
+        opers = (oper1, oper2)
+        return 0, mnem, opers, flags
+
     oper0 = ArmRegOper(Rd)
     oper1 = ArmRegOper(Rn)
     oper2 = ArmImmOper(const)
