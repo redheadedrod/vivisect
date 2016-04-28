@@ -3,6 +3,7 @@ import envi.bits as e_bits
 import envi.bintree as e_btree
 
 from envi.bits import binary
+from envi import InvalidInstruction
 
 from envi.archs.arm.disasm import *
 armd = ArmDisasm()
@@ -115,31 +116,129 @@ def rt_pc_imm8(va, value): # ldr
     oper1 = ArmImmOffsetOper(REG_PC, imm, (va&0xfffffffc))
     return oper0,oper1
 
-def bl_imm23(va, val, val2): # bl
-    opcode = INS_BL
-    flags = envi.IF_CALL
-    # need next two bytes
-    imm = (val&0x7ff) << 12
-    imm |= ((val2&0x7ff) << 1)
+def bl_imm23(va, val, val2): # bl and misc control
+    op = (val >> 4) & 0b1111111
+    op1 = (val2 >> 12) & 0b111
+    op2 = (val2 >> 8) & 0b1111
+    imm8 = val2 & 0b1111
 
-    # break down the components
-    S = (val>>10)&1
-    j1 = (val2>>13)&1
-    j2 = (val2>>11)&1
-    i1 = ~ (j1 ^ S) & 0x1
-    i2 = ~ (j2 ^ S) & 0x1
-    X = (val2>>12)&1
-    mnem = ('blx','bl')[X]
+    if (op1 & 0b101 == 0 and not (op & 0b111000)) or \
+            (op1 & 0b101) == 1 or \
+            op1 & 0b100:
+        opcode = INS_BL
+        flags = envi.IF_CALL
+        # need next two bytes
+        imm = (val&0x7ff) << 12
+        imm |= ((val2&0x7ff) << 1)
 
-    imm = (S<<24) | (i1<<23) | (i2<<22) | ((val&0x3ff) << 12) | ((val2&0x7ff) << 1)
+        # break down the components
+        S = (val>>10)&1
+        j1 = (val2>>13)&1
+        j2 = (val2>>11)&1
+        i1 = ~ (j1 ^ S) & 0x1
+        i2 = ~ (j2 ^ S) & 0x1
+        X = (val2>>12)&1
+        mnem = ('blx','bl')[X]
 
-    #sign extend a 23-bit number
-    if S:
-        imm |= 0xff000000
+        imm = (S<<24) | (i1<<23) | (i2<<22) | ((val&0x3ff) << 12) | ((val2&0x7ff) << 1)
 
-    oper0 = ArmPcOffsetOper(e_bits.signed(imm,4), va=va)
-    #return ((oper0, ) , mnem, opcode, flags)
-    return opcode, mnem, (oper0, ), flags
+        #sign extend a 23-bit number
+        if S:
+            imm |= 0xff000000
+
+        oper0 = ArmPcOffsetOper(e_bits.signed(imm,4), va=va)
+        #return ((oper0, ) , mnem, opcode, flags)
+        return opcode, mnem, (oper0, ), flags
+    elif op1 & 0b101 == 0:
+        if imm8 & 0b100000:     # xx1xxxxx
+            if (op & 0b1111110) == 0b0111000:
+                raise Exception("FIXME:  MSR(banked register) p B9-1964")
+
+            elif (op & 0b1111110 == 0b0111110):
+                raise Exception("FIXME:  MRS(banked register) p B9-1960")
+            raise InvalidInstruction(
+                mesg="bl_imm23 subsection 1",
+                bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
+        elif imm8 == 0:
+            if op == 0b0111101:
+                raise Exception("FIXME:  ERET p B9-1952")
+            raise InvalidInstruction(
+                mesg="bl_imm23 subsection 2",
+                bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
+        else:                   # xx0xxxxx and others
+            if op == 0b0111000:
+                tmp = op2 & 3
+                if tmp == 0:
+                    raise Exception("FIXME:  MSR(register) p A8-498")
+
+                else:
+                    raise Exception("FIXME:  MSR(register) p B9-1968")
+
+            elif op == 0b0111001:
+                # coalesce with previous
+                raise Exception("FIXME:  MSR(register) p B9-1968")
+
+            elif op == 0b0111010:
+                raise Exception("FIXME:  Change processor state ad hints p A6-234")
+
+            elif op == 0b0111011:
+                raise Exception("FIXME:  Misc control instrs p A6-235")
+
+            elif op == 0b0111100:
+                raise Exception("FIXME:  BXJ p A8-352")
+
+            elif op == 0b0111101:
+                raise Exception("FIXME:  SUB PC, LR, Thumb p B9-1980")
+
+            elif op == 0b0111110:
+                raise Exception("FIXME:  MRS(register) p A8-494")
+
+            elif op == 0b0111111:
+                raise Exception("FIXME:  MRS(register) p B9-1962")
+            raise InvalidInstruction(
+                mesg="bl_imm23 subsection 3",
+                bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
+
+    elif op1 == 0:
+        if op == 0b1111110:
+            raise Exception("FIXME:  HVC (hypervisor call) p B9-1954")
+
+        elif op == 0b1111111:
+            raise Exception("FIXME:  SMC (secure monitor call) p B9-1972")
+        raise InvalidInstruction(
+            mesg="bl_imm23 subsection 4",
+            bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
+
+    elif op1 & 0b101 == 1:
+        # already covered above..
+        pass
+        raise InvalidInstruction(
+            mesg="bl_imm23 subsection 5",
+            bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
+
+    elif op1 == 0b010:
+        if op == 0b1111111:
+            raise Exception("FIXME:  UDF (permanently undefined) p B9-1972")
+        raise InvalidInstruction(
+            mesg="bl_imm23 subsection 6",
+            bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
+    elif op1 & 0b100:
+        x = (val2>>12) & 1
+        s = (val>>10) & 1
+        raise Exception("FIXME:  BL/BLX p A8-346")
+
+
+    
+    raise InvalidInstruction(
+        mesg="bl_imm23 Branches and Miscellaneous Control: Failed to match",
+        bytez=struct.pack("<H", val)+struct.pack("<H", val2), va=va)
+
 
 def pc_imm11(va, value): # b
     imm = e_bits.signed(((value & 0x7ff)<<1), 3)
@@ -200,7 +299,7 @@ def i_imm5_rn(va, value):
     imm5 = shmaskval(value, 3, 0x40) | shmaskval(value, 2, 0x3e)
     rn = value & 0x7
     oper0 = ArmRegOper(rn, va)
-    oper1 = ArmImmOffsetOper(REG_PC, imm5, va)
+    oper1 = ArmPcOffsetOper(imm5, va)
     return (oper0, oper1,)
 
 def ldm16(va, value):
@@ -1462,6 +1561,7 @@ thumb2_extension = [
     ('11110010010',       (85,'orr',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
     ('11110010011',         (85,'orn',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # mvn if rn=1111
     ('11110010100',         (85,'eor',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # teq if rd=1111 and s=1
+    ('11110010110',         (85,'movt',     dp_bin_imm_32,        IF_W | IF_THUMB32)),  # teq if rd=1111 and s=1
     ('11110011000',         (85,'add',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # cmn if rd=1111 and s=1
     ('11110011010',         (85,'adc',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
     ('11110011011',         (85,'sbc',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
@@ -1472,11 +1572,13 @@ thumb2_extension = [
     ('11110110010',       (85,'orr',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
     ('11110110011',         (85,'orn',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # mvn if rn=1111
     ('11110110100',         (85,'eor',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # teq if rd=1111 and s=1
+    ('11110110110',         (85,'movt',     dp_bin_imm_32,        IF_W | IF_THUMB32)),  # teq if rd=1111 and s=1
     ('11110111000',         (85,'add',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # cmn if rd=1111 and s=1
     ('11110111010',         (85,'adc',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
     ('11110111011',         (85,'sbc',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
     ('11110111101',         (85,'sub',      dp_bin_imm_32,        IF_W | IF_THUMB32)),  # cmp if rd=1111 and s=1
     ('11110111110',         (85,'rsb',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
+    ('11110111111',         (85,'',      dp_bin_imm_32,        IF_W | IF_THUMB32)),
 
     ('11100',       (INS_B,  'b',       pc_imm11,           envi.IF_NOFALL)),        # B <imm11>
     # blx is covered by special exceptions in dp_bin_imm_32 and dp_mod_imm_32
