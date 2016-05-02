@@ -2192,7 +2192,7 @@ class ArmPcOffsetOper(ArmOperand):
 
     def repr(self, op):
         targ = self.getOperValue(op)
-        tname = "#0x%.8x" % targ
+        tname = "0x%.8x" % targ
         return tname
 
 
@@ -2510,7 +2510,7 @@ class ArmModeOper(ArmOperand):
         return None
 
     def repr(self, op):
-        return (proc_modes % self.mode)[PM_SNAME]
+        return proc_modes[0x10 | self.mode][PM_SNAME]
 
 class ArmDbgHintOption(ArmOperand):
     def __init__(self, option):
