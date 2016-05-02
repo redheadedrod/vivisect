@@ -1,6 +1,7 @@
 MODE_ARM        = 0
 MODE_THUMB      = 1
 MODE_JAZELLE    = 2
+MODE_THUMBEE    = 3
 
 #IFLAGS - keep bottom 8-bits for cross-platform flags like envi.IF_NOFALL and envi.IF_BRFALL
 IF_PSR_S     = 1<<32     # This DP instruciton can update CPSR
@@ -154,6 +155,14 @@ REG_EXT_S_FLAG = 0x200000
 REG_EXT_D_FLAG = 0x400000
 
 VFP_QWORD_REG_COUNT = 16    # VFPv4-D32
+
+PM_NAME     = 0
+PM_SHORTNM  = 1
+PM_DESC     = 2
+PM_OFFSET   = 3
+PM_REGCNT   = 4
+PM_PSROFF   = 5
+PM_PRIVLVL  = 6
 
 proc_modes = { # mode_name, short_name, description, offset, mode_reg_count, PSR_offset, privilege_level
     PM_usr: ("User Processor Mode", "usr", "Normal program execution mode", REG_OFFSET_USR, 15, REG_SPSR_usr, 0),
