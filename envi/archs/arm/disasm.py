@@ -2196,7 +2196,7 @@ class ArmPcOffsetOper(ArmOperand):
         return tname
 
 
-psrs = ("CPSR", "SPSR", 'inval', 'inval', 'inval', 'inval', 'inval', 'inval',)
+psrs = ("CPSR", "SPSR", 'APSR', 'inval', 'inval', 'inval', 'inval', 'inval',)
 fields = (None, 'c', 'x', 'cx', 's', 'cs', 'xs', 'cxs',  'f', 'fc', 'fx', 'fcx', 'fs', 'fcs', 'fxs', 'fcxs')
 
 class ArmPgmStatRegOper(ArmOperand):
@@ -2225,7 +2225,7 @@ class ArmPgmStatRegOper(ArmOperand):
             return None
 
         mode = emu.getProcMode()
-        if self.psr: # SPSR
+        if self.psr == PSR_SPSR: # SPSR
             psr = emu.getSPSR(mode)
         else:
             psr = emu.getCPSR()
@@ -2236,10 +2236,15 @@ class ArmPgmStatRegOper(ArmOperand):
         if emu == None:
             return None
         mode = emu.getProcMode()
-        if self.psr:    # SPSR
+        if self.psr == PSR_SPSR:    # SPSR
             psr = emu.getSPSR(mode)
             newpsr = psr & (~self.mask) | (val & self.mask)
             emu.setSPSR(mode, newpsr)
+
+        #elif self.psr == PSR_APSR:    # APSR is an alias for CPSR
+        #    psr = emu.getCPSR()
+        #    newpsr = psr & (~self.mask) | (val & self.mask)
+        #    emu.setCPSR(newpsr)
 
         else:           # CPSR
             psr = emu.getCPSR()
@@ -2248,8 +2253,21 @@ class ArmPgmStatRegOper(ArmOperand):
 
         return newpsr
 
+    def render(self, mcanv, op, idx):
+        field = fields[self.val]
+        if field != None:
+            psrstr = psrs[self.psr] + '_' + fields[self.val]
+        else:
+            psrstr = psrs[self.psr]
+
+        mcanv.addNameText(psrstr, typename='registers')
+
     def repr(self, op):
-        return psrs[self.psr] + '_' + fields[self.val]
+        field = fields[self.val]
+        if field != None:
+            return psrs[self.psr] + '_' + fields[self.val]
+        return psrs[self.psr]
+
     
 class ArmEndianOper(ArmImmOper):
     def repr(self, op):
