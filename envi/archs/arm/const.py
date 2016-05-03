@@ -156,14 +156,6 @@ REG_EXT_D_FLAG = 0x400000
 
 VFP_QWORD_REG_COUNT = 16    # VFPv4-D32
 
-PM_NAME     = 0
-PM_SHORTNM  = 1
-PM_DESC     = 2
-PM_OFFSET   = 3
-PM_REGCNT   = 4
-PM_PSROFF   = 5
-PM_PRIVLVL  = 6
-
 proc_modes = { # mode_name, short_name, description, offset, mode_reg_count, PSR_offset, privilege_level
     PM_usr: ("User Processor Mode", "usr", "Normal program execution mode", REG_OFFSET_USR, 15, REG_SPSR_usr, 0),
     PM_fiq: ("FIQ Processor Mode", "fiq", "Supports a high-speed data transfer or channel process", REG_OFFSET_FIQ, 8, REG_SPSR_fiq, 1),
@@ -180,8 +172,13 @@ PM_LNAME =  0
 PM_SNAME =  1
 PM_DESC =   2
 PM_REGOFF = 3
-PM_BANKED = 4
-PM_SPSR =   5
+PM_REGCNT = 4
+PM_PSROFF   = 5
+PM_PRIVLVL  = 6
+
+PSR_APSR    = 2
+PSR_SPSR    = 1
+PSR_CPSR    = 0
 
 INST_ENC_DP_IMM = 0 # Data Processing Immediate Shift
 INST_ENC_MISC   = 1 # Misc Instructions
