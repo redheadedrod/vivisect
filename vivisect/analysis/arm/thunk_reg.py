@@ -1,4 +1,5 @@
 import sys
+import envi
 import vivisect
 import vivisect.impemu.monitor as viv_monitor
 
@@ -118,7 +119,7 @@ def analyzeFunction(vw, fva, prepend=False):
     try:
         emu.runFunction(fva, maxhit=1)
     except:
-        print("Error emulating function 0x%x\n\t%s" % (fva, repr(emumon.emuanom)))
+        vprint("Error emulating function 0x%x\n\t%s" % (fva, repr(emumon.emuanom)))
 
     if vw.verbose: sys.stderr.write('=')
 
@@ -128,7 +129,12 @@ def analyzeFunction(vw, fva, prepend=False):
     for va, tgt in items:
         # if we already have xrefs, don't make more...
         if vw.getLocation(tgt) == None:
-            vw.followPointer(tgt)
+            try:
+                vw.followPointer(tgt)
+            except envi.SegmentationViolation:
+                vprint("SegV: %x (va:0x%x)" % (tgt,va))
+                emumon.emuanom.append("SegV: %x (va:0x%x)" % (tgt,va))
+                continue
 
         nogo = False
         for xfr,xto,xtype,xflag in vw.getXrefsFrom(va):
@@ -167,6 +173,11 @@ def analyze(vw):
             pass
 
 if globals().get('vw') != None:
-    vw.vprint("analyzing workspace for thunk_reg")
-    analyze(vw)
+    if len(argv) > 1:
+        va = vw.parseExpression(argv[1])
+        vw.vprint("analyzing workspace function %x for thunk_reg", va)
+        analyzeFunction(vw, va)
+    else:
+        vw.vprint("analyzing workspace for thunk_reg")
+        analyze(vw)
     vw.vprint("done")
