@@ -52,6 +52,55 @@ class CliExtMeth:
     def __call__(self, line):
         return self.func(self.cli, line)
 
+def validateScript(scriptpath):
+    '''
+    Takes in a filepath
+    Returns whether the file is valid python (ie. suvives import)
+    '''
+    if not os.path.isfile():
+        return False
+
+    with open(scriptpath, 'rb') as f:
+        contents = f.read()
+
+    try:
+        cobj = compile(contents, scriptpath, 'exec')
+        return True
+    except Exception, e:
+        pass
+    
+    return False
+
+def getRelScriptsFromPath(scriptpaths):
+    '''
+    Takes in a list of base paths (eg. VIV_SCRIPT_DIR list) and recurses the 
+    directories looking for valid python files (ie. they don't throw errors
+    on import).
+
+    Returns a list of scripts usable from the cli in *relative path* format.
+    ie.  if my path has "/home/hacker/fooscripts" in it, the script located
+    at "/home/hacker/fooscripts/barmazing/bazthis.py" is listed as
+    "barmazing/bazthis.py" and the do_script() handler can use that.
+    '''
+    scripts = []
+    todo = [(path, len(path)+1) for path in scriptpaths]
+
+    while len(todo):
+        curpath, baselen = todo.pop()
+
+        for filething in os.listdir(curpath):
+            fullpath = os.sep.join([curpath, filething])
+            if os.path.isdir(fullpath):
+                todo.append((fullpath, baselen))
+                continue
+
+            if not validateScript(fullpath):
+                continue
+
+            scripts.append(fullpath[baselen:])
+
+    return scripts
+
 cfgdefs = {
     'cli':{
         'verbose':False,
@@ -468,6 +517,8 @@ class EnviCli(Cmd):
               all be strings)
 
         Usage: script <scriptfile> [<argv[0]>, ...]
+            
+        or     script ?
         '''
         if len(line) == 0:
             return self.do_help('script')
@@ -476,14 +527,9 @@ class EnviCli(Cmd):
         locals = self.getExpressionLocals()
         locals['argv'] = argv
 
-        if line.startswith("?"):
-            scripts = []
-            for scriptdir in self.scriptpaths:
-                # FIXME: filter on more than just ".py".  something internal
-                potential_scripts = [py[:-3] for py in os.listdir(scriptdir) if py.endswith('.py')]
-                scripts.extend(potential_scripts)
-
-            self.vprint('Scripts available script paths:\n\t' + '\n\t'.join(scripts))
+        if len(argv) and argv[0] == "?":
+            scripts = getRelScriptsFromPath(self.scriptpaths)
+            self.vprint('Scripts available in script paths:\n\t' + '\n\t'.join(scripts))
             return
 
 
@@ -793,6 +839,7 @@ class EnviCli(Cmd):
 
         showmem()
         self.setEmptyMethod(showmem)
+
 
 class EnviMutableCli(EnviCli):
     """
