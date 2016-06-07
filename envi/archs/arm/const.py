@@ -25,6 +25,7 @@ REV_ARMv7EM =   0b0000000010000000000000 #     8192        0x2000
 REV_ARMv8A  =   0b0000000100000000000000 #    16384        0x4000
 REV_ARMv8R  =   0b0000001000000000000000 #    32768        0x8000
 REV_ARMv8M  =   0b0000010000000000000000 #    65536        0x10000
+
 REVS_ARMv4  = (REV_ARMv4 | REV_ARMv4T)
 REVS_ARMv5  = (REV_ARMv5 | REV_ARMv5T | REV_ARMv5E | REV_ARMv5J | REV_ARMv5TE)
 REVS_ARMv6  = (REV_ARMv6 | REV_ARMv6T2 | REV_ARMv6M)
@@ -36,6 +37,18 @@ REV_ALL = (REVS_ARMv4 | REVS_ARMv5 | REVS_ARMv6 | REVS_ARMv7 | REVS_ARMv8)
 REVT_THUMB16 = (REVS_ARMv5 | REVS_ARMv6)
 REVT_THUMB2  = (REVS_ARMv7 | REVS_ARMv8)
 REVT_THUMBEE = (REVS_ARMv7 | REVS_ARMv8)
+
+#neither of these is showing up as being there when I do the tab completion or list them
+ARCH_REV = {num: name for name, num in globals().items() if name.startswith('REV_')}
+ARCH2 = {}
+for name, num in globals().items():
+        if name.startswith('REV_'):
+            ARCH2[num] = name
+#but these will print out the values... And both have same contents so assume they are equivelent
+#print ARCH_REV
+#print ARCH2
+
+#So what am i missing?
 
 #In progress - Draft version
 ARCH_REVS = {
