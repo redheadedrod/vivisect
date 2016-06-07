@@ -38,40 +38,16 @@ REVT_THUMB16 = (REVS_ARMv5 | REVS_ARMv6)
 REVT_THUMB2  = (REVS_ARMv7 | REVS_ARMv8)
 REVT_THUMBEE = (REVS_ARMv7 | REVS_ARMv8)
 
-#neither of these is showing up as being there when I do the tab completion or list them
-ARCH_REV = {num: name for name, num in globals().items() if name.startswith('REV_')}
+ARCH_REVS = {num: name for name, num in globals().items() if name.startswith('REV_')}
+ARCH_REVSLEN = ARCH_REVSLEN = len(ARCH_REVS) 
+'''
+leaving here for reference for later
+May make adjustments to REVT and REVS components.
 ARCH2 = {}
 for name, num in globals().items():
         if name.startswith('REV_'):
             ARCH2[num] = name
-#but these will print out the values... And both have same contents so assume they are equivelent
-#print ARCH_REV
-#print ARCH2
-
-#So what am i missing?
-
-#In progress - Draft version
-ARCH_REVS = {
-    0:  ['ARMv4',     REV_ARMv4],
-    1:  ['ARMv4T',    REV_ARMv4T],
-    2:  ['ARMv5',     REV_ARMv5],
-    3:  ['ARMv5T',    REV_ARMv5T],
-    4:  ['ARMv5E',    REV_ARMv5E],
-    5:  ['ARMv5J',    REV_ARMv5J],
-    6:  ['ARMv5TE',   REV_ARMv5TE],
-    7:  ['REV_ARMv6', REV_ARMv6],
-    8:  ['ARMv6T2',   REV_ARMv6T2],
-    9:  ['ARMv6M',    REV_ARMv6M],
-    10: ['ARMv7A',    REV_ARMv7A],
-    11: ['ARMv7R',    REV_ARMv7R],
-    12: ['ARMv7M',    REV_ARMv7M],
-    13: ['ARMv7EM',   REV_ARMv7EM],
-    14: ['ARMv8A',    REV_ARMv8A],
-    15: ['ARMv8R',    REV_ARMv8R],
-    16: ['ARMv8M',    REV_ARMv8M],
-    17: ['ARMALL',    REV_ALL]
-}
-ARCH_REVSLEN = len(ARCH_REVS) 
+'''
 
 #IFLAGS - keep bottom 8-bits for cross-platform flags like envi.IF_NOFALL and envi.IF_BRFALL
 IF_PSR_S     = 1<<32     # This DP instruciton can update CPSR
