@@ -430,7 +430,13 @@ def p_misc1(opval, va): #
         mnem = 'bkpt'
         immed = ((opval>>4)&0xfff0) + (opval&0xf)
         olist = ( ArmImmOper(immed), )
-
+    #dbg - not sure where to put this
+    elif opval & 0xfff00f0 == 0x32000f0:
+        #need opcode
+        opcode = (IENC_MISC << 16) + 8
+        mnem = "dbg"
+        immed = opval & 0xf
+        olist = (ArmImmOper(immed),)
     else:
         raise envi.InvalidInstruction(
                 mesg="p_misc1: invalid instruction",
@@ -479,12 +485,33 @@ def p_extra_load_store(opval, va, psize=4):
     elif opval&0x0fe000f0==0x01800090:# strex/ldrex
         idx = pubwl&1
         opcode = (IENC_EXTRA_LOAD << 16) + 2 + idx
-        mnem = strex_mnem[idx]
-        olist = (
-            ArmRegOper(Rd, va=va),
-            ArmRegOper(Rm, va=va),
-            ArmRegOper(Rn, va=va),
-        )
+        itype = (opval >> 21) & 3
+        mnem = strex_mnem[idx]+strex_mnem[2+itype]
+        if (idx==0) & (itype !=1): #strex has 1 more entry than ldrex
+            olist = (
+                ArmRegOper(Rd, va=va),
+                ArmRegOper(Rm, va=va),
+                ArmRegOper(Rn, va=va),
+            )
+        elif idx==0: #special case
+            olist = (
+                ArmRegOper(Rd, va=va),
+                ArmRegOper(Rm, va=va),
+                ArmRegOper(Rm+1, va=va),
+                ArmRegOper(Rn, va=va),
+            )
+        elif (idx==1) & (itype != 1):
+            olist = (
+                ArmRegOper(Rd, va=va),
+                ArmRegOper(Rn, va=va),
+            )
+        else: #special case
+            olist = (
+                ArmRegOper(Rd, va=va),
+                ArmRegOper(Rd+1, va=va),
+                ArmRegOper(Rn, va=va),
+            )
+
     elif opval&0x0e4000f0==0x000000b0:# strh/ldrh regoffset
         # 000pu0w0-Rn--Rt-SBZ-1011-Rm-  - STRH
         # 0000u110-Rn--Rt-imm41011imm4  - STRHT (v7+)
@@ -826,7 +853,15 @@ def p_load_imm_off(opval, va, psize=4):
             ArmRegOper(Rd, va=va),
             ArmImmOffsetOper(Rn, imm, va, pubwl=pubwl, psize=psize)    # u=-/+, b=word/byte
         )
-    
+    olist = (
+        ArmRegOper(Rd, va=va),
+        ArmImmOffsetOper(Rn, imm, va, pubwl=pubwl, psize=psize)    # u=-/+, b=word/byte
+    )
+    if (opval & 0xfff0fff) == 0x49d0004:
+        mnem = "pop"
+        olist = (
+            ArmRegOper(Rd, va=va),
+        )
     opcode = (IENC_LOAD_IMM_OFF << 16)
     return (opcode, mnem, olist, iflags)
 
@@ -1209,7 +1244,16 @@ def p_load_mult(opval, va):
     flags = ((puswl>>3)<<(IF_DAIB_SHFT)) | IF_DA     # store bits for decoding whether to dec/inc before/after between ldr/str.  IF_DA tells the repr to print the the DAIB extension after the conditional.  right shift necessary to clear lower three bits, and align us with IF_DAIB_SHFT
     Rn = (opval>>16) & 0xf
     reg_list = opval & 0xffff
-
+    if (opval&0xfff0000) == 0x8bd0000:
+        mnem = "pop"
+        olist = (
+            ArmRegListOper(reg_list, puswl),
+        )
+    else:
+        olist = (
+            ArmRegOper(Rn, va=va),
+            ArmRegListOper(reg_list, puswl),
+        )
     if  (mnem_idx == 0) &(Rn == REG_SP) & ((puswl & 2)==2) & (bin(reg_list).count("1") > 1):
         #push
         mnem = "push"
@@ -1422,6 +1466,31 @@ def p_uncond(opval, va):
                 shval = (opval>>7) & 0x1f
                 olist = (ArmScaledOffsetOper(Rn, Rm, shtype, shval, va, (U<<3) | 0x10, psize=psize), )
             return (opcode, mnem, olist, 0)
+        elif (opval & 0xff000f0) == 0x5700010:
+            #clrex
+            mnem = "clrex"
+            olist =()
+            opcode = INS_CLREX
+            return (opcode, mnem, olist, 0)
+        elif (opval & 0xff000e0) == 0x5700040:
+            #dmb/dsb
+            option = opval & 0xf
+            if (opval & 0x10 )== 0x10:
+                mnem = 'dmb'
+                opcode = INS_DMB
+            else:
+                mnem = 'dsb'
+                opcode = INS_DSB
+            olist = (ArmBarrierOption(option),)
+            
+            return (opcode, mnem, olist, 0)
+        elif (opval & 0xff000f0) == 0x5700060:
+            #isb
+            option = opval & 0xf
+            mnem = 'isb'
+            olist = (ArmBarrierOption(option),)
+            opcode = INS_ISB
+            return (opcode, mnem, olist, 0)
         else:
             raise envi.InvalidInstruction(
                     mesg="p_uncond (ontop=1): invalid instruction",
@@ -1604,6 +1673,7 @@ s_0_table = (
 )
 
 s_1_table = (
+    (0b00001111111111110000000011110000, 0b00000011001000000000000011110000, IENC_MISC1), #dbg command
     (0b00001111101100000000000000000000, 0b00000011001000000000000000000000, IENC_MOV_IMM_STAT),
     (0b00001111111100000000000000000000, 0b00000011000000000000000000000000, IENC_DP_MOVW),
     (0b00001111111100000000000000000000, 0b00000011010000000000000000000000, IENC_DP_MOVT),
@@ -1824,7 +1894,6 @@ class ArmOpcode(envi.Opcode):
         if self.iflags & IF_THUMB32:
             mnem += ".w"
         x = []
-        
         for o in self.opers:
             x.append(o.repr(self))
         #if self.iflags & IF_W:     # handled in operand.  still keeping flag to indicate this instruction writes back
@@ -2863,6 +2932,18 @@ class ArmDbgHintOption(ArmOperand):
 
     def repr(self, op):
         return "#%d"%self.val
+
+class ArmBarrierOption(ArmOperand):
+    options = ("","","oshst","osh","","","nshst","nsh","","","ishst","ish","","","st","sy")
+    def __init__(self, option):
+        self.option = option
+
+    def retOption(self):
+        return self.options[self.option]
+
+    def repr(self, op):
+        return self.retOption()
+        
 
 
 ENDIAN_LSB = 0
